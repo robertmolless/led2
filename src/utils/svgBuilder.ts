@@ -4,7 +4,13 @@
  * Функция намеренно возвращает строку, а не JSX: эта же разметка идёт и в DOM
  * (через dangerouslySetInnerHTML), и в экспорт PNG/JPEG/PDF.
  */
-import type { CalculatedResult, ProjectConfig, PortGroup, CabinetCell } from "../types";
+import type {
+  CalculatedResult,
+  ProjectConfig,
+  PortGroup,
+  CabinetCell,
+  SideName
+} from "../types";
 import { getPresetById } from "../data/cabinetPresets";
 import { formatKw, formatKg } from "./calculations";
 
@@ -30,16 +36,50 @@ const C = {
 const PADDING = 80;
 const TECH_BLOCK_WIDTH = 380;
 const LEGEND_HEIGHT = 70;
-const LEGS_GAP = 56;        // расстояние от низа сетки до центра «ноги»
+const LEGS_GAP = 56;
 const LEG_RADIUS = 18;
 const TOP_LABEL_GAP = 56;
 const LEFT_LABEL_GAP = 42;
 const CABINET_LABEL_FONT = 14;
 const BASE_LINE_W = 4;
+// Внешний отступ от плашки U/B до сетки (чтобы плашка не прилипала вплотную).
+const BADGE_GAP = 2;
 
 interface BuildOptions {
   config: ProjectConfig;
   result: CalculatedResult;
+}
+
+type Side = SideName;
+
+/** Логическая сторона, обратная заданной. */
+function oppositeSide(s: Side): Side {
+  switch (s) {
+    case "left":   return "right";
+    case "right":  return "left";
+    case "top":    return "bottom";
+    case "bottom": return "top";
+  }
+}
+
+/**
+ * Сторона кабинета `from`, в которую он «передаёт» сигнал на `to`.
+ * Например, если `to` правее `from` — сигнал уходит «вправо».
+ */
+function dirFromTo(from: CabinetCell, to: CabinetCell): Side {
+  if (to.col > from.col) return "right";
+  if (to.col < from.col) return "left";
+  if (to.row > from.row) return "top";
+  if (to.row < from.row) return "bottom";
+  return "right";
+}
+
+/** При виде «спереди» зеркалится только по X. */
+function visualSide(logical: Side, flipX: boolean): Side {
+  if (!flipX) return logical;
+  if (logical === "left") return "right";
+  if (logical === "right") return "left";
+  return logical;
 }
 
 /**
@@ -60,7 +100,7 @@ export function buildSchemeSvg({ config, result }: BuildOptions): string {
   }
 
   // Подбираем масштаб «метр → пиксель» так, чтобы общая ширина SVG была
-  // примерно постоянная (1600 px видимой сетки), но не слишком крупная.
+  // примерно постоянная (~1600 px видимой сетки), но не слишком крупная.
   const targetGridWidth = 1600;
   const pxPerMeter = clamp(targetGridWidth / (nx * cabinetWidthM), 40, 220);
   const cellW = cabinetWidthM * pxPerMeter;
@@ -84,63 +124,59 @@ export function buildSchemeSvg({ config, result }: BuildOptions): string {
   const svgH = gridBottom + LEGS_GAP + LEG_RADIUS * 2 + LEGEND_HEIGHT + PADDING;
 
   // Зеркалирование при «виде спереди» — переворачиваем сетку и подписи по X.
-  // На референсе с видом спереди слева 1..20, на виде сзади тоже 1..24,
-  // но цепочки сигнала рисуются с правильной стороны входа. Зеркалим только содержимое сетки.
   const flipX = config.viewMode === "front";
 
-  // Координаты центра ячейки (row, col).
-  // row=0 — нижний ряд. На SVG ось Y «вниз», поэтому нижний ряд имеет y = gridBottom - cellH/2.
+  // Центры ячеек в screen-координатах с учётом flipX.
   const cellCenter = (row: number, col: number) => {
     const visualCol = flipX ? nx - 1 - col : col;
     const cx = gridLeft + visualCol * cellW + cellW / 2;
     const cy = gridBottom - row * cellH - cellH / 2;
     return { cx, cy };
   };
-  // Левая граница ячейки (для U/B блоков, размещаемых «прилипшими» к ряду слева/справа).
-  const cellLeftCenter = (row: number, col: number) => {
-    const visualCol = flipX ? nx - 1 - col : col;
-    const cx = gridLeft + visualCol * cellW;
-    const cy = gridBottom - row * cellH - cellH / 2;
-    return { cx, cy };
-  };
-  const cellRightCenter = (row: number, col: number) => {
-    const visualCol = flipX ? nx - 1 - col : col;
-    const cx = gridLeft + visualCol * cellW + cellW;
-    const cy = gridBottom - row * cellH - cellH / 2;
-    return { cx, cy };
+
+  // Центр любой из 4 граней ячейки в screen-координатах (visualSide — уже после flipX).
+  const edgeCenter = (row: number, col: number, vSide: Side) => {
+    const { cx, cy } = cellCenter(row, col);
+    const hw = cellW / 2;
+    const hh = cellH / 2;
+    switch (vSide) {
+      case "left":   return { cx: cx - hw, cy };
+      case "right":  return { cx: cx + hw, cy };
+      case "top":    return { cx, cy: cy - hh };
+      case "bottom": return { cx, cy: cy + hh };
+    }
   };
 
   // === Накапливаем SVG-элементы. ===
   const parts: string[] = [];
 
-  // Фон и рамка листа.
-  parts.push(
-    `<rect x="0" y="0" width="${svgW}" height="${svgH}" fill="${C.bg}"/>`
-  );
+  // Фон.
+  parts.push(`<rect x="0" y="0" width="${svgW}" height="${svgH}" fill="${C.bg}"/>`);
 
   // Заголовок «Вид сзади / Вид спереди».
   const viewLabel = config.viewMode === "back" ? "Вид сзади" : "Вид спереди";
   parts.push(
-    `<text x="${gridLeft + gridW / 2}" y="${PADDING + 28}" text-anchor="middle" font-family="system-ui, -apple-system, Arial" font-size="22" fill="${C.text}">${viewLabel}</text>`
+    `<text x="${gridLeft + gridW / 2}" y="${PADDING + 28}" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, Arial" font-size="22" fill="${C.text}">${viewLabel}</text>`
   );
 
   // Подписи столбцов (сверху).
   for (let col = 0; col < nx; col++) {
     const visualCol = flipX ? nx - 1 - col : col;
     const cx = gridLeft + visualCol * cellW + cellW / 2;
-    const labelY = gridTop - 14;
-    // На больших сетках показываем не каждый номер, чтобы не сливалось.
-    if (nx > 30 && col % 2 === 1) continue;
+    const labelY = gridTop - 16;
+    // На больших сетках показываем не каждый номер, чтобы не сливалось,
+    // но всегда показываем первый и последний.
+    if (nx > 30 && col % 2 === 1 && col !== nx - 1) continue;
     parts.push(
-      `<text x="${cx}" y="${labelY}" text-anchor="middle" font-family="system-ui" font-size="${CABINET_LABEL_FONT}" fill="${C.textMuted}">${col + 1}</text>`
+      `<text x="${cx}" y="${labelY}" text-anchor="middle" dominant-baseline="alphabetic" font-family="system-ui" font-size="${CABINET_LABEL_FONT}" fill="${C.textMuted}">${col + 1}</text>`
     );
   }
   // Подписи строк (слева).
   for (let row = 0; row < ny; row++) {
-    const cy = gridBottom - row * cellH - cellH / 2 + 5;
+    const cy = gridBottom - row * cellH - cellH / 2;
     const labelX = gridLeft - 18;
     parts.push(
-      `<text x="${labelX}" y="${cy}" text-anchor="middle" font-family="system-ui" font-size="${CABINET_LABEL_FONT}" fill="${C.textMuted}">${row + 1}</text>`
+      `<text x="${labelX}" y="${cy}" text-anchor="middle" dominant-baseline="central" font-family="system-ui" font-size="${CABINET_LABEL_FONT}" fill="${C.textMuted}">${row + 1}</text>`
     );
   }
 
@@ -161,13 +197,13 @@ export function buildSchemeSvg({ config, result }: BuildOptions): string {
     `<rect x="${gridLeft}" y="${gridTop}" width="${gridW}" height="${gridH}" fill="none" stroke="${C.border}" stroke-width="2"/>`
   );
 
-  // Номера кабинетов внутри ячеек (если включено).
+  // Номера кабинетов внутри ячеек.
   if (config.showCabinetNumbers) {
     for (let row = 0; row < ny; row++) {
       for (let col = 0; col < nx; col++) {
         const { cx, cy } = cellCenter(row, col);
         parts.push(
-          `<text x="${cx}" y="${cy + 4}" text-anchor="middle" font-family="system-ui" font-size="11" fill="${C.textMuted}">${row + 1}.${col + 1}</text>`
+          `<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" font-family="system-ui" font-size="11" fill="${C.textMuted}">${row + 1}.${col + 1}</text>`
         );
       }
     }
@@ -175,7 +211,6 @@ export function buildSchemeSvg({ config, result }: BuildOptions): string {
 
   // === Сигнал и питание — по портам. ===
   const portStrokeW = clamp(BASE_LINE_W, 2, 5);
-  // Сдвиг линий питания и сигнала внутри ячейки относительно центра, чтобы не сливались.
   const signalOffset = -Math.min(cellH * 0.18, 12);
   const powerOffset = +Math.min(cellH * 0.18, 12);
 
@@ -183,10 +218,10 @@ export function buildSchemeSvg({ config, result }: BuildOptions): string {
     drawPort(parts, port, {
       flipX,
       nx,
+      ny,
       cellCenter,
-      cellLeftCenter,
-      cellRightCenter,
-      signalRoutingMode: config.signalRoutingMode,
+      edgeCenter,
+      signalInputSide: config.signalInputSide,
       portStrokeW,
       signalOffset,
       powerOffset,
@@ -202,10 +237,8 @@ export function buildSchemeSvg({ config, result }: BuildOptions): string {
   if (legs > 0) {
     const legY = gridBottom + LEGS_GAP;
     for (let i = 0; i < legs; i++) {
-      // Равномерно распределяем по ширине сетки.
       const t = legs === 1 ? 0.5 : i / (legs - 1);
       const lx = gridLeft + t * gridW;
-      // Стойки — квадратные «башмаки» как на референсе.
       const size = LEG_RADIUS * 1.8;
       parts.push(
         `<rect x="${lx - size / 2}" y="${legY - size / 2}" width="${size}" height="${size}" fill="${C.leg}"/>`
@@ -214,7 +247,7 @@ export function buildSchemeSvg({ config, result }: BuildOptions): string {
   }
 
   // === Технический блок справа. ===
-  const techLines = buildTechLines(config, result, preset.name);
+  const techLines = buildTechLines(config, result, preset.name, preset.pixelPitch);
   parts.push(
     `<g font-family="system-ui, -apple-system, Arial" font-size="14" fill="${C.text}">`
   );
@@ -229,18 +262,15 @@ export function buildSchemeSvg({ config, result }: BuildOptions): string {
   });
   parts.push(`</g>`);
 
-  // Предупреждения (если есть) — красным под техблоком.
+  // Предупреждения.
   if (result.warnings.length > 0) {
-    parts.push(
-      `<g font-family="system-ui" font-size="12" fill="${C.warn}">`
-    );
+    parts.push(`<g font-family="system-ui" font-size="12" fill="${C.warn}">`);
     let wy = ty + 8;
     parts.push(
       `<text x="${techLeft}" y="${wy}" font-weight="700" fill="${C.warn}">Предупреждения:</text>`
     );
     wy += 18;
     result.warnings.slice(0, 6).forEach((w) => {
-      // Лёгкий перенос длинных строк.
       const wrapped = wrapText(w, 48);
       wrapped.forEach((line) => {
         parts.push(`<text x="${techLeft}" y="${wy}">• ${escapeXml(line)}</text>`);
@@ -266,10 +296,10 @@ export function buildSchemeSvg({ config, result }: BuildOptions): string {
 interface DrawPortCtx {
   flipX: boolean;
   nx: number;
+  ny: number;
   cellCenter: (r: number, c: number) => { cx: number; cy: number };
-  cellLeftCenter: (r: number, c: number) => { cx: number; cy: number };
-  cellRightCenter: (r: number, c: number) => { cx: number; cy: number };
-  signalRoutingMode: ProjectConfig["signalRoutingMode"];
+  edgeCenter: (r: number, c: number, vSide: Side) => { cx: number; cy: number };
+  signalInputSide: Side;
   portStrokeW: number;
   signalOffset: number;
   powerOffset: number;
@@ -279,17 +309,68 @@ interface DrawPortCtx {
   showPortNumbers: boolean;
 }
 
+/**
+ * Возвращает «логическую» сторону кабинета, на которую нужно поставить плашку U
+ * (со стороны входа сигнала в первый кабинет порта) и плашку B
+ * (со стороны выхода сигнала из последнего кабинета порта).
+ *
+ * Логика: если в цепочке порта >=2 кабинетов, направление однозначно
+ * определяется парой соседних кабинетов. Для одиночного кабинета — берём
+ * сторону ввода сигнала из конфига как fallback.
+ */
+function computeUBSides(
+  port: PortGroup,
+  fallback: Side
+): { uSide: Side; bSide: Side } {
+  const arr = port.cabinets;
+  let uSide: Side;
+  let bSide: Side;
+
+  if (arr.length >= 2) {
+    // Куда уходит сигнал из первого кабинета.
+    const firstOutDir = dirFromTo(arr[0], arr[1]);
+    // U стоит на противоположной стороне (туда вошёл сигнал).
+    uSide = oppositeSide(firstOutDir);
+
+    // Откуда сигнал пришёл в последний кабинет.
+    const lastInDir = dirFromTo(arr[arr.length - 1], arr[arr.length - 2]);
+    // B стоит на противоположной — там, куда сигнал бы пошёл дальше.
+    bSide = oppositeSide(lastInDir);
+  } else {
+    uSide = fallback;
+    bSide = oppositeSide(fallback);
+  }
+  return { uSide, bSide };
+}
+
+/**
+ * Позиция центра плашки (квадрата), прилипшей снаружи к указанной грани
+ * кабинета. visualSide — уже с учётом flipX.
+ */
+function placeBadge(
+  edge: { cx: number; cy: number },
+  size: number,
+  visualSide: Side
+): { cx: number; cy: number } {
+  const half = size / 2 + BADGE_GAP;
+  switch (visualSide) {
+    case "left":   return { cx: edge.cx - half, cy: edge.cy };
+    case "right":  return { cx: edge.cx + half, cy: edge.cy };
+    case "top":    return { cx: edge.cx, cy: edge.cy - half };
+    case "bottom": return { cx: edge.cx, cy: edge.cy + half };
+  }
+}
+
 function drawPort(parts: string[], port: PortGroup, ctx: DrawPortCtx) {
   if (port.cabinets.length === 0) return;
   const first = port.cabinets[0];
   const last = port.cabinets[port.cabinets.length - 1];
 
-  // Центры для линии сигнала.
+  // Линия сигнала через центры (с лёгким Y-смещением, чтобы не сливалось с питанием).
   const signalPoints = port.cabinets.map((c) => {
     const { cx, cy } = ctx.cellCenter(c.row, c.col);
     return { x: cx, y: cy + ctx.signalOffset };
   });
-  // Центры для линии питания.
   const powerPoints = port.cabinets.map((c) => {
     const { cx, cy } = ctx.cellCenter(c.row, c.col);
     return { x: cx, y: cy + ctx.powerOffset };
@@ -301,118 +382,118 @@ function drawPort(parts: string[], port: PortGroup, ctx: DrawPortCtx) {
   parts.push(
     `<polyline points="${signalPoints.map((p) => `${round(p.x)},${round(p.y)}`).join(" ")}" fill="none" stroke="${portColorOver ?? C.signal}" stroke-width="${ctx.portStrokeW}" stroke-linecap="round" stroke-linejoin="round"/>`
   );
-  // Питание (смещение).
+  // Питание.
   parts.push(
     `<polyline points="${powerPoints.map((p) => `${round(p.x)},${round(p.y)}`).join(" ")}" fill="none" stroke="${C.power}" stroke-width="${ctx.portStrokeW}" stroke-linecap="round" stroke-linejoin="round"/>`
   );
 
-  // U — в начале цепочки. Размещаем «прилипшим» к стороне ряда.
-  // Для horizontal_rows: U слева, B справа (если backup), как в референсе.
-  // Для vertical_columns / snake_columns: U снизу, B сверху.
-  const uSize = Math.min(ctx.cellH * 0.7, 36);
+  // === Размещение U и B ===
+  // 1) Логические стороны определяем по реальному направлению цепочки.
+  const { uSide, bSide } = computeUBSides(port, ctx.signalInputSide);
+  // 2) Переводим их в визуальные с учётом flipX (зеркало по X для вида спереди).
+  const uVisual = visualSide(uSide, ctx.flipX);
+  const bVisual = visualSide(bSide, ctx.flipX);
 
-  let uX = 0, uY = 0, bX = 0, bY = 0;
-  if (
-    ctx.signalRoutingMode === "horizontal_rows" ||
-    ctx.signalRoutingMode === "snake_rows"
-  ) {
-    // U на стороне, противоположной flipX-зеркалу: ставим у левого края первого кабинета.
-    const fEdge = ctx.flipX ? ctx.cellRightCenter(first.row, first.col) : ctx.cellLeftCenter(first.row, first.col);
-    uX = fEdge.cx - (ctx.flipX ? -uSize / 2 : uSize / 2);
-    uY = fEdge.cy;
-    const lEdge = ctx.flipX ? ctx.cellLeftCenter(last.row, last.col) : ctx.cellRightCenter(last.row, last.col);
-    bX = lEdge.cx + (ctx.flipX ? -uSize / 2 : uSize / 2);
-    bY = lEdge.cy;
-  } else {
-    // Вертикальные режимы: U снизу первого кабинета, B сверху последнего.
-    const f = ctx.cellCenter(first.row, first.col);
-    uX = f.cx;
-    uY = f.cy + ctx.cellH / 2 + uSize / 2 + 2;
-    const l = ctx.cellCenter(last.row, last.col);
-    bX = l.cx;
-    bY = l.cy - ctx.cellH / 2 - uSize / 2 - 2;
-  }
+  // 3) Размер плашки. Базируемся на меньшей из сторон ячейки, чтобы не вылезать.
+  const uSize = clamp(Math.min(ctx.cellW, ctx.cellH) * 0.55, 22, 40);
 
-  // Рисуем U.
-  parts.push(squareBadge(uX, uY, uSize, C.uFill, "U", C.uText));
+  // 4) Центры плашек — снаружи нужной грани.
+  const uEdge = ctx.edgeCenter(first.row, first.col, uVisual);
+  const uPos = placeBadge(uEdge, uSize, uVisual);
+  parts.push(squareBadge(uPos.cx, uPos.cy, uSize, C.uFill, "U", C.uText));
 
-  // Номер порта рядом с U.
+  // Номер порта рядом с U — со стороны, противоположной кабинету.
   if (ctx.showPortNumbers) {
-    let labelX = uX;
-    let labelY = uY + uSize * 0.9;
-    let anchor = "middle";
-    if (
-      ctx.signalRoutingMode === "horizontal_rows" ||
-      ctx.signalRoutingMode === "snake_rows"
-    ) {
-      labelX = ctx.flipX ? uX + uSize / 2 + 6 : uX - uSize / 2 - 6;
-      labelY = uY + 4;
-      anchor = ctx.flipX ? "start" : "end";
+    const off = uSize / 2 + 6;
+    let lx = uPos.cx, ly = uPos.cy;
+    let anchor: "start" | "end" | "middle" = "middle";
+    let baseline: "central" | "alphabetic" | "hanging" = "central";
+    switch (uVisual) {
+      case "left":   lx = uPos.cx - off; anchor = "end";    baseline = "central"; break;
+      case "right":  lx = uPos.cx + off; anchor = "start";  baseline = "central"; break;
+      case "top":    ly = uPos.cy - off; anchor = "middle"; baseline = "alphabetic"; break;
+      case "bottom": ly = uPos.cy + off; anchor = "middle"; baseline = "hanging"; break;
     }
     parts.push(
-      `<text x="${labelX}" y="${labelY}" text-anchor="${anchor}" font-family="system-ui" font-size="13" fill="${C.text}" font-weight="600">P${port.portNumber}</text>`
+      `<text x="${round(lx)}" y="${round(ly)}" text-anchor="${anchor}" dominant-baseline="${baseline}" font-family="system-ui" font-size="13" fill="${C.text}" font-weight="600">P${port.portNumber}</text>`
     );
   }
 
-  // B (только при включённом backup).
+  // B (только при включённом backup) — на стороне выхода из последнего кабинета.
   if (ctx.backupEnabled) {
-    parts.push(squareBadge(bX, bY, uSize, C.bFill, "B", C.bText));
+    const bEdge = ctx.edgeCenter(last.row, last.col, bVisual);
+    const bPos = placeBadge(bEdge, uSize, bVisual);
+    parts.push(squareBadge(bPos.cx, bPos.cy, uSize, C.bFill, "B", C.bText));
   }
 }
 
-function squareBadge(cx: number, cy: number, size: number, fill: string, text: string, textColor: string): string {
+/**
+ * Квадратная плашка с буквой по центру. Использует dominant-baseline="central"
+ * для корректной вертикальной центровки текста во всех браузерах и при экспорте.
+ */
+function squareBadge(
+  cx: number,
+  cy: number,
+  size: number,
+  fill: string,
+  text: string,
+  textColor: string
+): string {
   const x = cx - size / 2;
   const y = cy - size / 2;
   return `<g>
     <rect x="${round(x)}" y="${round(y)}" width="${round(size)}" height="${round(size)}" fill="${fill}" stroke="${C.border}" stroke-width="1"/>
-    <text x="${round(cx)}" y="${round(cy + size * 0.18)}" text-anchor="middle" font-family="system-ui" font-size="${round(size * 0.55)}" font-weight="700" fill="${textColor}">${text}</text>
+    <text x="${round(cx)}" y="${round(cy)}" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, Arial" font-size="${round(size * 0.55)}" font-weight="700" fill="${textColor}">${text}</text>
   </g>`;
 }
 
 function drawLegend(parts: string[], x: number, y: number) {
-  const items: Array<{ render: string; label: string }> = [
-    {
-      render: `<line x1="${x}" y1="${y}" x2="${x + 40}" y2="${y}" stroke="${C.power}" stroke-width="4"/>`,
-      label: "Питание"
-    },
-    {
-      render: `<line x1="${x + 160}" y1="${y}" x2="${x + 200}" y2="${y}" stroke="${C.signal}" stroke-width="4"/>`,
-      label: "Сигнал"
-    },
-    {
-      render: squareBadge(x + 320, y, 22, C.uFill, "U", C.uText),
-      label: "Up / ввод сигнал"
-    },
-    {
-      render: squareBadge(x + 480, y, 22, C.bFill, "B", C.bText),
-      label: "Backup"
-    },
-    {
-      render: `<rect x="${x + 600}" y="${y - 10}" width="20" height="20" fill="${C.leg}"/>`,
-      label: "Опорная стойка"
-    }
-  ];
   parts.push(`<g font-family="system-ui" font-size="14" fill="${C.text}">`);
-  parts.push(items[0].render);
-  parts.push(`<text x="${x + 50}" y="${y + 5}">${items[0].label}</text>`);
-  parts.push(items[1].render);
-  parts.push(`<text x="${x + 210}" y="${y + 5}">${items[1].label}</text>`);
-  parts.push(items[2].render);
-  parts.push(`<text x="${x + 340}" y="${y + 5}">${items[2].label}</text>`);
-  parts.push(items[3].render);
-  parts.push(`<text x="${x + 500}" y="${y + 5}">${items[3].label}</text>`);
-  parts.push(items[4].render);
-  parts.push(`<text x="${x + 630}" y="${y + 5}">${items[4].label}</text>`);
+  // Питание.
+  parts.push(
+    `<line x1="${x}" y1="${y}" x2="${x + 40}" y2="${y}" stroke="${C.power}" stroke-width="4"/>`
+  );
+  parts.push(
+    `<text x="${x + 50}" y="${y}" dominant-baseline="central">Питание</text>`
+  );
+  // Сигнал.
+  parts.push(
+    `<line x1="${x + 160}" y1="${y}" x2="${x + 200}" y2="${y}" stroke="${C.signal}" stroke-width="4"/>`
+  );
+  parts.push(
+    `<text x="${x + 210}" y="${y}" dominant-baseline="central">Сигнал</text>`
+  );
+  // U.
+  parts.push(squareBadge(x + 320, y, 22, C.uFill, "U", C.uText));
+  parts.push(
+    `<text x="${x + 340}" y="${y}" dominant-baseline="central">Up / вход сигнала</text>`
+  );
+  // B.
+  parts.push(squareBadge(x + 510, y, 22, C.bFill, "B", C.bText));
+  parts.push(
+    `<text x="${x + 530}" y="${y}" dominant-baseline="central">Backup</text>`
+  );
+  // Стойка.
+  parts.push(
+    `<rect x="${x + 620}" y="${y - 10}" width="20" height="20" fill="${C.leg}"/>`
+  );
+  parts.push(
+    `<text x="${x + 650}" y="${y}" dominant-baseline="central">Опорная стойка</text>`
+  );
   parts.push(`</g>`);
 }
 
 function buildTechLines(
   config: ProjectConfig,
   r: CalculatedResult,
-  presetName: string
+  presetName: string,
+  pixelPitch: string
 ): string[] {
   const lines: string[] = [];
-  lines.push(`Пресет кабинета: ${presetName}`);
+  // Раньше здесь было «Пресет кабинета: …». Заменено на пользовательскую
+  // терминологию: версия экрана + тип модуля.
+  lines.push(`Версия экрана: ${pixelPitch}`);
+  lines.push(`Модуль: ${presetName}`);
   lines.push(
     `Экран: ${stripZero(config.screenWidthMeters)}×${stripZero(config.screenHeightMeters)} м`
   );
@@ -443,7 +524,7 @@ function buildTechLines(
   if (config.screenCount > 1) {
     lines.push(`Порты всего: ${r.portsNeededAllScreens}`);
   }
-  lines.push(`Макс. кабинетов на порт: ${r.maxCabinetsPerPort}`);
+  lines.push(`Макс. модулей на порт: ${r.maxCabinetsPerPort}`);
   lines.push(`Лимит порта: 650 000 px`);
   lines.push(`Ноги: ${r.legsCount}`);
   lines.push(`Вид: ${config.viewMode === "back" ? "сзади" : "спереди"}`);

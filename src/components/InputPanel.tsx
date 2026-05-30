@@ -1,5 +1,9 @@
 import type { ProjectConfig } from "../types";
-import { CABINET_PRESETS, getPresetById } from "../data/cabinetPresets";
+import {
+  CABINET_PRESETS,
+  canonicalPresetId,
+  getPresetById
+} from "../data/cabinetPresets";
 
 interface Props {
   config: ProjectConfig;
@@ -8,6 +12,8 @@ interface Props {
 
 export function InputPanel({ config, onChange }: Props) {
   const preset = getPresetById(config.cabinetPresetId);
+  // Канонический id (с маппингом legacy → актуальный) — для корректного value у <select>.
+  const presetIdForSelect = canonicalPresetId(config.cabinetPresetId);
 
   const patch = (p: Partial<ProjectConfig>) => onChange({ ...config, ...p });
 
@@ -62,9 +68,9 @@ export function InputPanel({ config, onChange }: Props) {
         </label>
 
         <label className="field">
-          <span>Пресет кабинета</span>
+          <span>Модуль</span>
           <select
-            value={config.cabinetPresetId}
+            value={presetIdForSelect}
             onChange={(e) => patch({ cabinetPresetId: e.target.value })}
           >
             {CABINET_PRESETS.map((p) => (
@@ -75,7 +81,7 @@ export function InputPanel({ config, onChange }: Props) {
 
         {preset.orientable && (
           <label className="field">
-            <span>Ориентация кабинета</span>
+            <span>Ориентация модуля</span>
             <select
               value={config.orientation}
               onChange={(e) => patch({ orientation: e.target.value as ProjectConfig["orientation"] })}
@@ -189,7 +195,7 @@ export function InputPanel({ config, onChange }: Props) {
             checked={config.showCabinetNumbers}
             onChange={(e) => patch({ showCabinetNumbers: e.target.checked })}
           />
-          <span>Показывать номера кабинетов</span>
+          <span>Показывать номера модулей</span>
         </label>
 
         <label className="field field-checkbox">
@@ -212,8 +218,9 @@ export function InputPanel({ config, onChange }: Props) {
       </div>
 
       <div className="preset-info">
-        <h3>Технический пресет</h3>
+        <h3>Параметры модуля</h3>
         <dl>
+          <div><dt>Версия</dt><dd>{preset.pixelPitch}</dd></div>
           <div><dt>Размер</dt><dd>{preset.widthMeters}×{preset.heightMeters} м</dd></div>
           <div><dt>Разрешение</dt><dd>{preset.pixelWidth}×{preset.pixelHeight} px</dd></div>
           <div><dt>Пикселей</dt><dd>{(preset.pixelWidth * preset.pixelHeight).toLocaleString("ru-RU")} px</dd></div>

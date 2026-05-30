@@ -12,19 +12,33 @@ import { exportPdf } from "./utils/exportPdf";
 import { exportPng } from "./utils/exportPng";
 import { exportJpeg } from "./utils/exportJpeg";
 import { setCurrentId, getCurrentId, getProjectById } from "./utils/storage";
+import { canonicalPresetId } from "./data/cabinetPresets";
+
+/**
+ * Нормализует загруженную конфигурацию: маппит устаревшие id пресетов на
+ * актуальные, чтобы старые сохранённые проекты корректно открывались после
+ * переименования модулей.
+ */
+function normalizeConfig(c: ProjectConfig): ProjectConfig {
+  const canonical = canonicalPresetId(c.cabinetPresetId);
+  if (canonical !== c.cabinetPresetId) {
+    return { ...c, cabinetPresetId: canonical };
+  }
+  return c;
+}
 
 export function App() {
   const [config, setConfig] = useState<ProjectConfig>(() => {
     // Восстановление черновика из localStorage.
     try {
       const draft = localStorage.getItem("led-scheme-builder.draft");
-      if (draft) return JSON.parse(draft) as ProjectConfig;
+      if (draft) return normalizeConfig(JSON.parse(draft) as ProjectConfig);
     } catch {}
     // Иначе если в storage есть «текущий» проект — открываем его.
     const cid = getCurrentId();
     if (cid) {
       const p = getProjectById(cid);
-      if (p) return p.config;
+      if (p) return normalizeConfig(p.config);
     }
     return makeDefaultConfig();
   });
@@ -57,7 +71,7 @@ export function App() {
     setCurrentId(id);
   };
   const handleLoad = (p: SavedProject) => {
-    setConfig(p.config);
+    setConfig(normalizeConfig(p.config));
     setCurId(p.id);
     setCurrentId(p.id);
     setPmOpen(false);

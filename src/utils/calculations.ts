@@ -88,6 +88,9 @@ export function calculateProject(config: ProjectConfig): CalculatedResult {
   }
 
   // Группировка по портам — отдаём в utils/routing.
+  // Сторона ввода сигнала влияет на стартовую точку и направление обхода:
+  // U-плашка («вход сигнала») окажется на первом кабинете цепочки, а B —
+  // на последнем, что соответствует реальной коммутации NovaStar.
   const ports = buildPortGroups(
     cabinets,
     cabinetCountX,
@@ -95,7 +98,8 @@ export function calculateProject(config: ProjectConfig): CalculatedResult {
     maxCabinetsPerPort,
     pixelsPerCabinet,
     preset.maxPixelsPerPort,
-    config.signalRoutingMode
+    config.signalRoutingMode,
+    config.signalInputSide
   );
 
   const portsNeededOneScreen = ports.length;
@@ -126,18 +130,18 @@ export function calculateProject(config: ProjectConfig): CalculatedResult {
 
   if (Math.abs(rawCountX - Math.round(rawCountX)) > 1e-3) {
     warnings.push(
-      `Ширина экрана (${fmtNum(screenW)} м) не делится нацело на ширину кабинета (${fmtNum(dims.widthM)} м). ` +
-        `Используется ${cabinetCountX} кабинетов = ${fmtNum(cabinetCountX * dims.widthM)} м.`
+      `Ширина экрана (${fmtNum(screenW)} м) не делится нацело на ширину модуля (${fmtNum(dims.widthM)} м). ` +
+        `Используется ${cabinetCountX} модулей = ${fmtNum(cabinetCountX * dims.widthM)} м.`
     );
   }
   if (Math.abs(rawCountY - Math.round(rawCountY)) > 1e-3) {
     warnings.push(
-      `Высота экрана (${fmtNum(screenH)} м) не делится нацело на высоту кабинета (${fmtNum(dims.heightM)} м). ` +
-        `Используется ${cabinetCountY} кабинетов = ${fmtNum(cabinetCountY * dims.heightM)} м.`
+      `Высота экрана (${fmtNum(screenH)} м) не делится нацело на высоту модуля (${fmtNum(dims.heightM)} м). ` +
+        `Используется ${cabinetCountY} модулей = ${fmtNum(cabinetCountY * dims.heightM)} м.`
     );
   }
   if (cabinetCountX === 0 || cabinetCountY === 0) {
-    warnings.push("Экран слишком маленький — кабинеты не помещаются.");
+    warnings.push("Экран слишком маленький — модули не помещаются.");
   }
   ports.forEach((p) => {
     if (p.isOverLimit) {

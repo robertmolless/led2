@@ -16,11 +16,11 @@ export function ResultsPanel({ config, result }: Props) {
         <h3>На один экран</h3>
         <ul className="kv">
           <Row k="Модули" v={`${result.cabinetCountX} × ${result.cabinetCountY}`} />
-          <Row k="Всего кабинетов" v={result.totalCabinetsOneScreen} />
+          <Row k="Всего модулей" v={result.totalCabinetsOneScreen} />
           <Row k="Разрешение" v={`${result.resolutionX} × ${result.resolutionY}`} />
           <Row k="Всего пикселей" v={result.totalPixelsOneScreen.toLocaleString("ru-RU")} />
           <Row k="Порты NovaStar" v={result.portsNeededOneScreen} />
-          <Row k="Макс. кабинетов на порт" v={result.maxCabinetsPerPort} />
+          <Row k="Макс. модулей на порт" v={result.maxCabinetsPerPort} />
           <Row k="Мощность" v={formatKw(result.totalPowerKwOneScreen)} />
           <Row k="Вес" v={formatKg(result.totalWeightKgOneScreen)} />
           <Row k="Средняя загрузка порта" v={`${result.averagePortLoadPercent.toFixed(1)}%`} />
@@ -34,7 +34,7 @@ export function ResultsPanel({ config, result }: Props) {
         <section className="result-section">
           <h3>На все экраны (×{config.screenCount})</h3>
           <ul className="kv">
-            <Row k="Всего кабинетов" v={result.totalCabinetsAllScreens} />
+            <Row k="Всего модулей" v={result.totalCabinetsAllScreens} />
             <Row k="Всего пикселей" v={result.totalPixelsAllScreens.toLocaleString("ru-RU")} />
             <Row k="Суммарно портов" v={result.portsNeededAllScreens} />
             <Row k="Суммарная мощность" v={formatKw(result.totalPowerKwAllScreens)} />
@@ -51,7 +51,7 @@ export function ResultsPanel({ config, result }: Props) {
               <div key={p.portNumber} className={`port-row ${p.isOverLimit ? "over" : ""}`}>
                 <div className="port-num">P{p.portNumber}</div>
                 <div className="port-info">
-                  <div>{p.cabinets.length} каб. / {p.pixels.toLocaleString("ru-RU")} px</div>
+                  <div>{p.cabinets.length} мод. / {p.pixels.toLocaleString("ru-RU")} px</div>
                   <div className="port-bar">
                     <div
                       className="port-bar-fill"
