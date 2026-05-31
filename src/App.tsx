@@ -13,7 +13,7 @@ import { exportPng } from "./utils/exportPng";
 import { exportJpeg } from "./utils/exportJpeg";
 import { setCurrentId, getCurrentId, getProjectById } from "./utils/storage";
 import { canonicalPresetId } from "./data/cabinetPresets";
-import { resolveProcessor } from "./utils/processor";
+import { resolveProcessor, buildPatchPlan } from "./utils/processor";
 import { makeDefaultScreen } from "./utils/defaults";
 import type { ScreenConfig } from "./types";
 
@@ -110,6 +110,7 @@ export function App() {
     () => resolveProcessor(result, config.processorMode, config.processorId),
     [result, config.processorMode, config.processorId]
   );
+  const patchPlan = useMemo(() => buildPatchPlan(config, result), [config, result]);
 
   const handleNew = () => {
     if (confirm("Создать новый проект? Текущие несохранённые изменения будут потеряны.")) {
@@ -146,7 +147,7 @@ export function App() {
     if (svgRef.current) return svgRef.current;
     // Защита: если ref ещё не успел заполниться, собираем SVG прямо здесь.
     const { buildSchemeSvg } = await import("./utils/svgBuilder");
-    return buildSchemeSvg({ config, result, recommendation });
+    return buildSchemeSvg({ config, result, recommendation, patchPlan });
   };
   const handleExportPdf = () => withBusy("PDF…", async () => exportPdf(await getSvg(), config.projectName));
   const handleExportPng = () => withBusy("PNG…", async () => exportPng(await getSvg(), config.projectName));
@@ -187,14 +188,15 @@ export function App() {
     <>
       <AppShell
         toolbar={toolbar}
-        inputs={<InputPanel config={config} onChange={setConfig} recommendation={recommendation} />}
-        results={<ResultsPanel config={config} result={result} recommendation={recommendation} />}
+        inputs={<InputPanel config={config} onChange={setConfig} recommendation={recommendation} patchPlan={patchPlan} />}
+        results={<ResultsPanel config={config} result={result} recommendation={recommendation} patchPlan={patchPlan} />}
         warnings={<Warnings warnings={result.warnings} />}
         scheme={
           <SchemeSvg
             config={config}
             result={result}
             recommendation={recommendation}
+            patchPlan={patchPlan}
             onSvgReady={(s) => {
               svgRef.current = s;
             }}
@@ -208,9 +210,9 @@ export function App() {
           <div className="mobile-overlay-inner" onClick={(e) => e.stopPropagation()}>
             <button className="btn-close" onClick={() => setSidebarOpen("none")}>×</button>
             {sidebarOpen === "inputs" ? (
-              <InputPanel config={config} onChange={setConfig} recommendation={recommendation} />
+              <InputPanel config={config} onChange={setConfig} recommendation={recommendation} patchPlan={patchPlan} />
             ) : (
-              <ResultsPanel config={config} result={result} recommendation={recommendation} />
+              <ResultsPanel config={config} result={result} recommendation={recommendation} patchPlan={patchPlan} />
             )}
           </div>
         </div>

@@ -195,6 +195,7 @@ export function calculateScreen(
     id: screen.id,
     name: screen.name,
     signalInputSide: screen.signalInputSide,
+    signalRoutingMode: screen.signalRoutingMode,
     requestedWidthM: screenW,
     requestedHeightM: screenH,
     cabinetWidthM: colW,

@@ -652,3 +652,40 @@ body {
   color: var(--text-muted, #4b5563);
   line-height: 1.4;
 }
+
+/* ===== Патч-лист процессоров (ResultsPanel) ===== */
+.patch-warn {
+  color: var(--warn);
+  font-size: 12px;
+  margin: 4px 0;
+  line-height: 1.35;
+}
+.patch-unit {
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  background: var(--surface-muted);
+}
+.patch-unit.over { border-color: var(--warn); }
+.patch-unit-head {
+  font-weight: 700;
+  font-size: 13px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.patch-unit-ports { font-weight: 500; color: var(--text-muted); white-space: nowrap; }
+.patch-screen {
+  border-top: 1px dashed var(--border);
+  padding: 6px 0 2px;
+  font-size: 12.5px;
+}
+.patch-screen:first-of-type { border-top: none; }
+.patch-screen-name { font-weight: 600; }
+.patch-screen-route { color: var(--text-muted); }
+.patch-ports { display: flex; gap: 12px; margin: 2px 0; flex-wrap: wrap; }
+.patch-up { color: #16a34a; font-weight: 600; }
+.patch-bk { color: #b45309; font-weight: 600; }
+.patch-mode { color: var(--text-muted); font-size: 11.5px; }

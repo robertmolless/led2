@@ -14,9 +14,12 @@ import type {
   ScreenResult,
   PortGroup,
   CabinetCell,
-  ProcessorRecommendation
+  ProcessorRecommendation,
+  PatchPlan,
+  ScreenPatch
 } from "../types";
 import { formatKw, formatKg } from "./calculations";
+import { formatPorts } from "./processor";
 
 const C = {
   bg: "#ffffff",
@@ -48,9 +51,10 @@ interface BuildOptions {
   config: ProjectConfig;
   result: ProjectResult;
   recommendation?: ProcessorRecommendation;
+  patchPlan?: PatchPlan;
 }
 
-export function buildSchemeSvg({ config, result, recommendation }: BuildOptions): string {
+export function buildSchemeSvg({ config, result, recommendation, patchPlan }: BuildOptions): string {
   const screens = result.screens;
   if (screens.length === 0) return emptySvg("Нет экранов. Добавьте хотя бы один экран.");
   const renderable = screens.filter((s) => s.cabinetCountX > 0 && s.cabinetCountY > 0);
@@ -65,14 +69,20 @@ export function buildSchemeSvg({ config, result, recommendation }: BuildOptions)
 
   const maxGridH = renderable.reduce((m, r) => Math.max(m, r.actualHeightM * scale), 0);
 
-  const headerLines = buildAllLines(config, result, recommendation);
+  const headerLines = buildAllLines(config, result, recommendation, patchPlan);
   const headerH = Math.max(headerLines.length * 20 + 24, config.showLegend ? 150 : 0);
+
+  // Высота зоны подписи зависит от самой длинной подписи (патч добавляет строк).
+  const captionLineCounts = renderable.map(
+    (s) => buildScreenCaption(s, patchPlan?.perScreen[s.id], config.backupEnabled).length
+  );
+  const maxCaptionLines = Math.max(CAPTION_LINES, ...captionLineCounts);
 
   const gridsTop = PADDING + headerH + HEADER_GAP + LABEL_H;
   const gridsBottom = gridsTop + maxGridH;
   const legsY = gridsBottom + LEGS_GAP;
   const captionTop = legsY + LEG_R * 2 + CAPTION_GAP;
-  const captionBottom = captionTop + CAPTION_LINES * CAPTION_LINE;
+  const captionBottom = captionTop + maxCaptionLines * CAPTION_LINE;
 
   const parts: string[] = [];
   parts.push(`__BG__`);
@@ -94,7 +104,7 @@ export function buildSchemeSvg({ config, result, recommendation }: BuildOptions)
       actualHeightM: screen.actualHeightM,
       legsY,
       captionTop
-    });
+    }, patchPlan?.perScreen[screen.id]);
 
     maxRight = gridLeft + gridW;
     cursorX = gridLeft + gridW + SCREEN_GAP;
@@ -143,7 +153,8 @@ function drawScreen(
   parts: string[],
   screen: ScreenResult,
   config: ProjectConfig,
-  L: ScreenLayout
+  L: ScreenLayout,
+  patch?: ScreenPatch
 ) {
   const gridW = L.actualWidthM * L.scale;
   const gridH = L.actualHeightM * L.scale;
@@ -211,13 +222,15 @@ function drawScreen(
     }
   }
 
-  // Подпись параметров под экраном.
-  const cap = buildScreenCaption(screen);
+  // Подпись параметров + патч под экраном.
+  const cap = buildScreenCaption(screen, patch, config.backupEnabled);
   let cy = L.captionTop;
   parts.push(`<g font-family="system-ui, -apple-system, Arial" font-size="13" fill="${C.text}">`);
-  cap.forEach((line, i) => {
+  cap.forEach((item) => {
+    const fill = item.accent ? C.signal : C.text;
+    const weight = item.bold ? 700 : 400;
     parts.push(
-      `<text x="${round(L.gridLeft)}" y="${round(cy)}" font-weight="${i === 0 ? 700 : 400}">${escapeXml(line)}</text>`
+      `<text x="${round(L.gridLeft)}" y="${round(cy)}" font-weight="${weight}" fill="${fill}">${escapeXml(item.text)}</text>`
     );
     cy += CAPTION_LINE;
   });
@@ -330,7 +343,12 @@ function drawLegend(parts: string[], x: number, y: number) {
   parts.push(`</g>`);
 }
 
-function buildAllLines(config: ProjectConfig, r: ProjectResult, rec?: ProcessorRecommendation): string[] {
+function buildAllLines(
+  config: ProjectConfig,
+  r: ProjectResult,
+  _rec?: ProcessorRecommendation,
+  patch?: PatchPlan
+): string[] {
   const lines: string[] = [];
   lines.push(`${config.projectName || "Проект"} — ${r.pixelPitch}`);
   lines.push(
@@ -339,24 +357,55 @@ function buildAllLines(config: ProjectConfig, r: ProjectResult, rec?: ProcessorR
   lines.push(`Экранов: ${r.screenCount} · Модулей: ${r.totalCabinets}`);
   lines.push(`Энергопотребление: ${formatKw(r.totalPowerKw)} · Вес: ${formatKg(r.totalWeightKg)}`);
   lines.push(`Портов всего: ${r.totalPorts} · Ноги: ${r.totalLegs}`);
-  if (rec) {
-    const units = rec.unitsNeeded > 1 ? `${rec.unitsNeeded}× ` : "";
-    const flag = rec.fits ? "" : " (не хватает — см. предупреждения)";
-    lines.push(`Процессор: ${units}${rec.processor.name}${flag}`);
+  if (patch && patch.units.length > 0) {
+    // Сводка по моделям (могут быть разные).
+    const counts = new Map<string, number>();
+    patch.units.forEach((u) => counts.set(u.processor.name, (counts.get(u.processor.name) ?? 0) + 1));
+    const summary = Array.from(counts.entries()).map(([n, c]) => `${c}× ${n}`).join(", ");
+    lines.push(`Процессоры (${patch.units.length}): ${summary}`);
+    patch.units.forEach((unit) => {
+      lines.push(
+        `  Проц №${unit.index} (${unit.processor.name}): ${unit.screenNames.join(", ")} — ${unit.usedPorts}/${unit.processor.portCount} порт.`
+      );
+    });
   }
   lines.push(`Вид: ${config.viewMode === "front" ? "из зала (спереди)" : "сзади"}`);
   return lines;
 }
 
-function buildScreenCaption(s: ScreenResult): string[] {
-  return [
-    `${s.name}: ${stripZero(s.actualWidthM)}×${stripZero(s.actualHeightM)} м (${s.resolutionX}×${s.resolutionY})`,
-    `Модули ${s.cabinetCountX}×${s.cabinetCountY} = ${s.totalCabinets}`,
-    `Порты (сигнал): ${s.portsNeeded}`,
-    `Энергопотребление: ${formatKw(s.totalPowerKw)}`,
-    `Вес: ${formatKg(s.totalWeightKg)}`,
-    `Ноги: ${s.legsCount}`
-  ];
+interface CaptionLine {
+  text: string;
+  bold?: boolean;
+  accent?: boolean;
+}
+
+function buildScreenCaption(
+  s: ScreenResult,
+  patch: ScreenPatch | undefined,
+  backupEnabled: boolean
+): CaptionLine[] {
+  const lines: CaptionLine[] = [];
+
+  // Патч-блок (в стиле инженерного патч-листа).
+  if (patch) {
+    lines.push({ text: `Патч. ${s.name} ${stripZero(s.actualWidthM)}×${stripZero(s.actualHeightM)} м`, bold: true, accent: true });
+    lines.push({ text: patch.routingText });
+    lines.push({ text: `${patch.processorName} · Проц №${patch.unitIndex}` });
+    lines.push({ text: `UP: ${formatPorts(patch.upPorts)}` });
+    if (backupEnabled && patch.backupPorts.length > 0) {
+      lines.push({ text: `BACKUP: ${formatPorts(patch.backupPorts)}` });
+    }
+    lines.push({ text: `MODE: ${patch.mode}` });
+    lines.push({ text: `EDID: ${patch.edid}` });
+    lines.push({ text: "—" });
+  }
+
+  // Физические параметры.
+  lines.push({ text: `Модули ${s.cabinetCountX}×${s.cabinetCountY} = ${s.totalCabinets}`, bold: !patch });
+  lines.push({ text: `Разрешение ${s.resolutionX}×${s.resolutionY}` });
+  lines.push({ text: `Порты (сигнал): ${s.portsNeeded}` });
+  lines.push({ text: `${formatKw(s.totalPowerKw)} · ${formatKg(s.totalWeightKg)} · ноги ${s.legsCount}` });
+  return lines;
 }
 
 function emptySvg(msg: string): string {

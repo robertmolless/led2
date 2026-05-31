@@ -1,19 +1,20 @@
 import { useEffect, useMemo } from "react";
-import type { ProjectResult, ProjectConfig, ProcessorRecommendation } from "../types";
+import type { ProjectResult, ProjectConfig, ProcessorRecommendation, PatchPlan } from "../types";
 import { buildSchemeSvg } from "../utils/svgBuilder";
 
 interface Props {
   config: ProjectConfig;
   result: ProjectResult;
   recommendation?: ProcessorRecommendation;
+  patchPlan?: PatchPlan;
   /** Колбэк для передачи готового SVG родителю (для экспорта). */
   onSvgReady?: (svg: string) => void;
 }
 
-export function SchemeSvg({ config, result, recommendation, onSvgReady }: Props) {
+export function SchemeSvg({ config, result, recommendation, patchPlan, onSvgReady }: Props) {
   const svg = useMemo(
-    () => buildSchemeSvg({ config, result, recommendation }),
-    [config, result, recommendation]
+    () => buildSchemeSvg({ config, result, recommendation, patchPlan }),
+    [config, result, recommendation, patchPlan]
   );
 
   useEffect(() => {

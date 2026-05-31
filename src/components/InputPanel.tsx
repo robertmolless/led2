@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { ProjectConfig, ScreenConfig, ProcessorRecommendation } from "../types";
+import type { ProjectConfig, ScreenConfig, ProcessorRecommendation, PatchPlan } from "../types";
 import {
   CABINET_PRESETS,
   canonicalPresetId,
@@ -14,9 +14,10 @@ interface Props {
   config: ProjectConfig;
   onChange: (next: ProjectConfig) => void;
   recommendation?: ProcessorRecommendation;
+  patchPlan?: PatchPlan;
 }
 
-export function InputPanel({ config, onChange, recommendation }: Props) {
+export function InputPanel({ config, onChange, recommendation, patchPlan }: Props) {
   const preset = getPresetById(config.cabinetPresetId);
   const presetIdForSelect = canonicalPresetId(config.cabinetPresetId);
   const tall = isTallModule(preset);
@@ -119,8 +120,13 @@ export function InputPanel({ config, onChange, recommendation }: Props) {
             onChange={(e) => patch({ processorMode: e.target.value as ProjectConfig["processorMode"] })}
           >
             <option value="auto">Автоматически</option>
-            <option value="manual">Вручную</option>
+            <option value="manual">Вручную (одна модель)</option>
           </select>
+          <small className="field-hint">
+            {config.processorMode === "auto"
+              ? "Под каждый процессор подбирается своя модель; экраны паку­ются по портам."
+              : "Выбранная модель применяется ко всем процессорам проекта."}
+          </small>
         </label>
 
         {config.processorMode === "manual" && (
@@ -131,36 +137,40 @@ export function InputPanel({ config, onChange, recommendation }: Props) {
               onChange={(e) => patch({ processorId: e.target.value })}
             >
               {PROCESSORS.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
+                <option key={p.id} value={p.id}>{p.name} · {p.portCount} порт</option>
               ))}
             </select>
           </label>
         )}
 
-        {recommendation && (
-          <div className={`processor-result ${recommendation.fits ? "" : "over"}`}>
-            <div className="processor-name">
-              {recommendation.unitsNeeded > 1 ? `${recommendation.unitsNeeded}× ` : ""}
-              {recommendation.processor.name}
-              {recommendation.fits ? "" : " — не хватает!"}
-            </div>
-            <div className="processor-spec">
-              {recommendation.processor.portCount} порт · {recommendation.processor.maxTotalPixels.toLocaleString("ru-RU")} px
-            </div>
+        {/* Фактическая раскладка по процессорам (упаковка по портам). */}
+        {patchPlan && patchPlan.units.length > 0 && (
+          <div className="processor-units">
+            {patchPlan.warnings.map((w, i) => (
+              <div key={i} className="processor-result over"><div className="processor-name">⚠ {w}</div></div>
+            ))}
+            {patchPlan.units.map((u) => (
+              <div key={u.index} className={`processor-result ${u.overflow ? "over" : ""}`}>
+                <div className="processor-name">Проц №{u.index}: {u.processor.name}</div>
+                <div className="processor-spec">
+                  {u.screenNames.join(", ")} · {u.usedPorts}/{u.processor.portCount} порт
+                </div>
+              </div>
+            ))}
           </div>
         )}
 
-        {showWhy && recommendation && (
+        {showWhy && (
           <div className="why-box">
-            <strong>Почему:</strong>
+            <strong>Как считается:</strong>
             <ul>
-              {recommendation.reasons.map((r, i) => (
-                <li key={i}>{r}</li>
-              ))}
+              <li>Каждый экран занимает порты: ряд = порт (без змеек); с backup число удваивается.</li>
+              <li>Экраны упаковываются на процессор, пока хватает портов и пикселей.</li>
+              <li>Кончились ресурсы — берётся следующий процессор.</li>
+              {recommendation && recommendation.reasons.slice(0, 2).map((r, i) => <li key={i}>{r}</li>)}
             </ul>
             <div className="why-note">
-              Лимит одного порта NovaStar — 650 000 px. Полная ёмкость процессора = порты × 650k.
-              Подбирается минимально достаточная модель, у которой хватает и портов, и пикселей, и размера канвы.
+              Лимит одного порта NovaStar — 650 000 px. Полная ёмкость = порты × 650k.
             </div>
           </div>
         )}

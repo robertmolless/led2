@@ -1,13 +1,15 @@
-import type { ProjectConfig, ProjectResult, ScreenResult, ProcessorRecommendation } from "../types";
+import type { ProjectConfig, ProjectResult, ScreenResult, ProcessorRecommendation, PatchPlan, ScreenPatch } from "../types";
 import { formatKg, formatKw } from "../utils/calculations";
+import { formatPorts } from "../utils/processor";
 
 interface Props {
   config: ProjectConfig;
   result: ProjectResult;
   recommendation?: ProcessorRecommendation;
+  patchPlan?: PatchPlan;
 }
 
-export function ResultsPanel({ result, recommendation }: Props) {
+export function ResultsPanel({ config, result, patchPlan }: Props) {
   const multi = result.screenCount > 1;
   return (
     <div className="panel results-panel">
@@ -24,19 +26,55 @@ export function ResultsPanel({ result, recommendation }: Props) {
           <Row k="Мощность" v={formatKw(result.totalPowerKw)} />
           <Row k="Вес" v={formatKg(result.totalWeightKg)} />
           <Row k="Ноги" v={result.totalLegs} />
-          {recommendation && (
-            <Row
-              k="Процессор"
-              v={`${recommendation.unitsNeeded > 1 ? recommendation.unitsNeeded + "× " : ""}${recommendation.processor.name}`}
-              warn={!recommendation.fits}
-            />
+          {patchPlan && (
+            <Row k="Процессоры" v={summarizeModels(patchPlan)} />
           )}
         </ul>
       </section>
 
+      {/* Патч-лист по процессорам */}
+      {patchPlan && patchPlan.units.length > 0 && (
+        <section className="result-section">
+          <h3>Патч ({config.processorMode === "manual" ? "ручной выбор" : "авто"})</h3>
+          {patchPlan.warnings.map((w, i) => (
+            <div key={i} className="patch-warn">⚠ {w}</div>
+          ))}
+          {patchPlan.units.map((u) => (
+            <div key={u.index} className={`patch-unit ${u.overflow ? "over" : ""}`}>
+              <div className="patch-unit-head">
+                Проц №{u.index}: {u.processor.name}
+                <span className="patch-unit-ports">{u.usedPorts}/{u.processor.portCount} порт.</span>
+              </div>
+              {u.screenIds.map((sid) => {
+                const sp = patchPlan.perScreen[sid];
+                const sc = result.screens.find((s) => s.id === sid);
+                if (!sp || !sc) return null;
+                return <PatchScreen key={sid} name={sc.name} sp={sp} backup={config.backupEnabled} />;
+              })}
+            </div>
+          ))}
+        </section>
+      )}
+
       {result.screens.map((s) => (
         <ScreenBlock key={s.id} s={s} />
       ))}
+    </div>
+  );
+}
+
+function PatchScreen({ name, sp, backup }: { name: string; sp: ScreenPatch; backup: boolean }) {
+  return (
+    <div className="patch-screen">
+      <div className="patch-screen-name">{name} · {sp.edid}</div>
+      <div className="patch-screen-route">{sp.routingText}</div>
+      <div className="patch-ports">
+        <span className="patch-up">UP: {formatPorts(sp.upPorts)}</span>
+        {backup && sp.backupPorts.length > 0 && (
+          <span className="patch-bk">BACKUP: {formatPorts(sp.backupPorts)}</span>
+        )}
+      </div>
+      <div className="patch-mode">MODE: {sp.mode}</div>
     </div>
   );
 }
@@ -50,7 +88,6 @@ function ScreenBlock({ s }: { s: ScreenResult }) {
         <Row k="Модули" v={`${s.cabinetCountX} × ${s.cabinetCountY} = ${s.totalCabinets}`} />
         <Row k="Разрешение" v={`${s.resolutionX} × ${s.resolutionY}`} />
         <Row k="Порты" v={s.portsNeeded} />
-        <Row k="Макс. модулей на порт" v={s.maxCabinetsPerPort} />
         <Row k="Мощность" v={formatKw(s.totalPowerKw)} />
         <Row k="Вес" v={formatKg(s.totalWeightKg)} />
         <Row k="Макс. загрузка порта" v={`${s.maxPortLoadPercent.toFixed(1)}%`} warn={s.maxPortLoadPercent > 100} />
@@ -80,6 +117,12 @@ function ScreenBlock({ s }: { s: ScreenResult }) {
 function strip(n: number): string {
   if (Math.abs(n - Math.round(n)) < 1e-9) return String(Math.round(n));
   return String(parseFloat(n.toFixed(2)));
+}
+
+function summarizeModels(plan: PatchPlan): string {
+  const counts = new Map<string, number>();
+  plan.units.forEach((u) => counts.set(u.processor.name, (counts.get(u.processor.name) ?? 0) + 1));
+  return Array.from(counts.entries()).map(([n, c]) => `${c}× ${n}`).join(", ") || "—";
 }
 
 function Row({ k, v, warn }: { k: string; v: React.ReactNode; warn?: boolean }) {

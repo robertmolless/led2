@@ -37,6 +37,41 @@ export interface ProcessorRecommendation {
   reasons: string[];     // человекочитаемое объяснение «почему»
 }
 
+/**
+ * Патч одного экрана внутри процессорного юнита: на каком процессоре (его
+ * номер), какими портами заведён UP и BACKUP, режим и EDID.
+ */
+export interface ScreenPatch {
+  unitIndex: number;       // номер процессора (1-based)
+  processorName: string;   // "NovaStar VX1000"
+  routingText: string;     // "Слева направо снизу вверх"
+  upPorts: number[];       // [1,2]
+  backupPorts: number[];   // [5,6] (пусто, если backup выключен)
+  mode: string;            // "PIXEL TO PIXEL FULL SCALE"
+  edid: string;            // "1152×960"
+}
+
+/**
+ * Один физический процессор (юнит). На него может быть заведено НЕСКОЛЬКО
+ * экранов — пока хватает портов и пикселей. Суть группировки — ресурсы портов.
+ */
+export interface ProcessorUnit {
+  index: number;           // 1-based номер процессора
+  processor: Processor;
+  screenIds: string[];     // какие экраны заведены на этот процессор
+  screenNames: string[];
+  usedPorts: number;       // занято портов (UP + BACKUP)
+  usedPixels: number;
+  overflow: boolean;       // экран(ы) не влезают в один юнит этой модели
+}
+
+export interface PatchPlan {
+  units: ProcessorUnit[];
+  model: Processor;                       // выбранная модель процессора
+  perScreen: Record<string, ScreenPatch>; // patch по id экрана
+  warnings: string[];
+}
+
 export type ProcessorMode = "auto" | "manual";
 
 export type Orientation = "horizontal" | "vertical";
@@ -129,6 +164,7 @@ export interface ScreenResult {
   id: string;
   name: string;
   signalInputSide: SideName;
+  signalRoutingMode: SignalRoutingMode;
   requestedWidthM: number;
   requestedHeightM: number;
 
