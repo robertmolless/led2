@@ -24,6 +24,9 @@
 
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; }
+/* Динамическая высота вьюпорта: на мобильных Safari/Chrome корректно учитывает
+   адресную строку и не «прыгает». 100% оставлен как фолбэк для старых браузеров. */
+#root { height: 100dvh; }
 body {
   margin: 0;
   background: var(--bg);
@@ -33,6 +36,8 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overscroll-behavior: none;
+  /* На iOS запрещаем подгонку текста при повороте. */
+  -webkit-text-size-adjust: 100%;
 }
 
 /* ===== Layout ===== */
@@ -161,22 +166,43 @@ body {
   background: var(--surface);
   color: var(--text);
   border: 1px solid var(--border-strong);
-  border-radius: 6px;
-  padding: 8px 10px;
-  font-size: 14px;
+  border-radius: 8px;
+  padding: 10px 12px;
+  /* 16px обязательно: при меньшем размере iOS Safari зумит страницу на фокусе. */
+  font-size: 16px;
+  line-height: 1.3;
   font-family: inherit;
+  min-height: 44px; /* комфортный тач-таргет */
+}
+.field select {
+  /* Стрелка для select, раз убрали нативный appearance. */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%234b5563' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 32px;
 }
 .field input:focus, .field select:focus {
   outline: none;
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(37,99,235,0.15);
 }
+.field-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 400;
+}
 .field-checkbox {
   flex-direction: row;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  min-height: 44px;
 }
-.field-checkbox input { width: auto; margin: 0; }
+.field-checkbox input {
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  flex-shrink: 0;
+}
 
 .preset-info {
   margin-top: 16px;
@@ -370,17 +396,23 @@ body {
   justify-content: flex-start;
 }
 .mobile-overlay-inner {
-  width: min(90vw, 360px);
+  width: min(92vw, 380px);
   background: var(--surface);
   height: 100%;
   overflow-y: auto;
-  padding: 16px;
+  -webkit-overflow-scrolling: touch;
+  /* Учитываем островок сверху и home-индикатор снизу. */
+  padding: max(16px, env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom));
+  padding-left: max(16px, env(safe-area-inset-left));
   position: relative;
 }
 .mobile-overlay-inner .btn-close {
-  position: absolute;
-  top: 8px;
-  right: 8px;
+  position: sticky;
+  top: 0;
+  float: right;
+  margin: -8px -8px 0 0;
+  background: var(--surface);
+  z-index: 1;
 }
 
 @media (max-width: 980px) {
@@ -389,18 +421,53 @@ body {
   }
   .sidebar { display: none; }
   .mobile-only { display: inline-flex; }
-  .header-title { font-size: 13px; }
-  .btn { padding: 6px 10px; font-size: 12px; }
-  .center { padding: 8px; }
-  .scheme-wrapper { padding: 4px; }
+  .header-title { font-size: 14px; }
+  /* Кнопки в тулбаре — комфортный тап. */
+  .btn {
+    padding: 8px 12px;
+    font-size: 13px;
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
+  }
+  .btn.ghost.mobile-only {
+    min-width: 40px;
+    justify-content: center;
+    font-size: 18px;
+  }
+  .center {
+    padding: 8px;
+    /* Нижний home-индикатор не должен перекрывать схему. */
+    padding-bottom: calc(8px + env(safe-area-inset-bottom));
+  }
+  .scheme-wrapper { padding: 4px; min-height: 320px; }
+  /* На мобильном форма дышит свободнее. */
+  .form-grid { gap: 14px; }
+  .panel + .panel { margin-top: 20px; }
 }
 
 @media (max-width: 480px) {
   .header-title {
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 110px;
+    white-space: nowrap;
+    max-width: 92px;
   }
+  .app-header { gap: 8px; padding-left: 8px; padding-right: 8px; }
+  .header-toolbar { gap: 4px; }
+  /* На совсем узких экранах текстовые кнопки экспорта чуть компактнее, но
+     по-прежнему ≥ 40px по высоте для удобного тапа. */
+  .btn { padding: 8px 10px; }
+
+  /* Модалка проектов на телефоне — на всю доступную ширину. */
+  .modal { max-height: 88vh; border-radius: 14px; }
+  .modal-actions { flex-wrap: wrap; }
+  .modal-actions .btn { flex: 1 1 auto; min-height: 44px; }
+  /* Карточка проекта: имя сверху, кнопки снизу, чтобы ничего не наезжало. */
+  .project-item { flex-direction: column; align-items: stretch; gap: 10px; }
+  .project-actions { justify-content: flex-end; }
+  .project-actions .btn { min-height: 40px; padding: 8px 12px; font-size: 13px; }
+  .btn.small { padding: 8px 12px; font-size: 13px; }
 }
 
 /* iOS safe area */
@@ -410,5 +477,17 @@ body {
     padding-right: max(12px, env(safe-area-inset-right));
     height: calc(var(--header-h) + env(safe-area-inset-top));
     padding-top: env(safe-area-inset-top);
+  }
+  /* Левый сайдбар (десктоп) не заезжает под вырез слева в ландшафте. */
+  .sidebar-left {
+    padding-left: max(16px, env(safe-area-inset-left));
+  }
+  .sidebar-right {
+    padding-right: max(16px, env(safe-area-inset-right));
+  }
+  /* Модалку (менеджер проектов) держим в безопасной зоне со всех сторон. */
+  .modal-backdrop {
+    padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+             max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
   }
 }

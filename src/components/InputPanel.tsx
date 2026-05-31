@@ -4,6 +4,7 @@ import {
   canonicalPresetId,
   getPresetById
 } from "../data/cabinetPresets";
+import { NumericField } from "./NumericField";
 
 interface Props {
   config: ProjectConfig;
@@ -31,41 +32,28 @@ export function InputPanel({ config, onChange }: Props) {
           />
         </label>
 
-        <label className="field">
-          <span>Ширина экрана, м</span>
-          <input
-            type="number"
-            inputMode="decimal"
-            step="0.1"
-            min="0.5"
-            value={config.screenWidthMeters}
-            onChange={(e) => patch({ screenWidthMeters: parseFloat(e.target.value) || 0 })}
-          />
-        </label>
+        <NumericField
+          label="Ширина экрана, м"
+          value={config.screenWidthMeters}
+          onChange={(n) => patch({ screenWidthMeters: n })}
+          min={0.5}
+          hint="Можно вводить через запятую или точку"
+        />
 
-        <label className="field">
-          <span>Высота экрана, м</span>
-          <input
-            type="number"
-            inputMode="decimal"
-            step="0.1"
-            min="0.5"
-            value={config.screenHeightMeters}
-            onChange={(e) => patch({ screenHeightMeters: parseFloat(e.target.value) || 0 })}
-          />
-        </label>
+        <NumericField
+          label="Высота экрана, м"
+          value={config.screenHeightMeters}
+          onChange={(n) => patch({ screenHeightMeters: n })}
+          min={0.5}
+        />
 
-        <label className="field">
-          <span>Количество экранов</span>
-          <input
-            type="number"
-            inputMode="numeric"
-            step="1"
-            min="1"
-            value={config.screenCount}
-            onChange={(e) => patch({ screenCount: parseInt(e.target.value || "1", 10) || 1 })}
-          />
-        </label>
+        <NumericField
+          label="Количество экранов"
+          value={config.screenCount}
+          onChange={(n) => patch({ screenCount: n })}
+          integer
+          min={1}
+        />
 
         <label className="field">
           <span>Модуль</span>
@@ -165,17 +153,13 @@ export function InputPanel({ config, onChange }: Props) {
         </label>
 
         {config.legsMode === "manual" && (
-          <label className="field">
-            <span>Стоек, шт</span>
-            <input
-              type="number"
-              inputMode="numeric"
-              min="0"
-              step="1"
-              value={config.manualLegs}
-              onChange={(e) => patch({ manualLegs: parseInt(e.target.value || "0", 10) || 0 })}
-            />
-          </label>
+          <NumericField
+            label="Стоек, шт"
+            value={config.manualLegs}
+            onChange={(n) => patch({ manualLegs: n })}
+            integer
+            min={0}
+          />
         )}
 
         <label className="field">
