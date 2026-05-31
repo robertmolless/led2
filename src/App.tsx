@@ -13,6 +13,7 @@ import { exportPng } from "./utils/exportPng";
 import { exportJpeg } from "./utils/exportJpeg";
 import { setCurrentId, getCurrentId, getProjectById } from "./utils/storage";
 import { canonicalPresetId } from "./data/cabinetPresets";
+import { resolveProcessor } from "./utils/processor";
 import { makeDefaultScreen } from "./utils/defaults";
 import type { ScreenConfig } from "./types";
 
@@ -37,6 +38,8 @@ function normalizeConfig(raw: any): ProjectConfig {
       showCabinetNumbers: raw.showCabinetNumbers ?? true,
       showPortNumbers: raw.showPortNumbers ?? true,
       showLegend: raw.showLegend ?? true,
+      processorMode: raw.processorMode ?? "auto",
+      processorId: raw.processorId ?? "vx1000",
       screens
     };
   }
@@ -67,6 +70,8 @@ function normalizeConfig(raw: any): ProjectConfig {
     showCabinetNumbers: raw?.showCabinetNumbers ?? true,
     showPortNumbers: raw?.showPortNumbers ?? true,
     showLegend: raw?.showLegend ?? true,
+    processorMode: raw?.processorMode ?? "auto",
+    processorId: raw?.processorId ?? "vx1000",
     screens
   };
 }
@@ -101,6 +106,10 @@ export function App() {
 
   // Расчёт.
   const result = useMemo(() => calculateProject(config), [config]);
+  const recommendation = useMemo(
+    () => resolveProcessor(result, config.processorMode, config.processorId),
+    [result, config.processorMode, config.processorId]
+  );
 
   const handleNew = () => {
     if (confirm("Создать новый проект? Текущие несохранённые изменения будут потеряны.")) {
@@ -137,7 +146,7 @@ export function App() {
     if (svgRef.current) return svgRef.current;
     // Защита: если ref ещё не успел заполниться, собираем SVG прямо здесь.
     const { buildSchemeSvg } = await import("./utils/svgBuilder");
-    return buildSchemeSvg({ config, result });
+    return buildSchemeSvg({ config, result, recommendation });
   };
   const handleExportPdf = () => withBusy("PDF…", async () => exportPdf(await getSvg(), config.projectName));
   const handleExportPng = () => withBusy("PNG…", async () => exportPng(await getSvg(), config.projectName));
@@ -178,13 +187,14 @@ export function App() {
     <>
       <AppShell
         toolbar={toolbar}
-        inputs={<InputPanel config={config} onChange={setConfig} />}
-        results={<ResultsPanel config={config} result={result} />}
+        inputs={<InputPanel config={config} onChange={setConfig} recommendation={recommendation} />}
+        results={<ResultsPanel config={config} result={result} recommendation={recommendation} />}
         warnings={<Warnings warnings={result.warnings} />}
         scheme={
           <SchemeSvg
             config={config}
             result={result}
+            recommendation={recommendation}
             onSvgReady={(s) => {
               svgRef.current = s;
             }}
@@ -198,9 +208,9 @@ export function App() {
           <div className="mobile-overlay-inner" onClick={(e) => e.stopPropagation()}>
             <button className="btn-close" onClick={() => setSidebarOpen("none")}>×</button>
             {sidebarOpen === "inputs" ? (
-              <InputPanel config={config} onChange={setConfig} />
+              <InputPanel config={config} onChange={setConfig} recommendation={recommendation} />
             ) : (
-              <ResultsPanel config={config} result={result} />
+              <ResultsPanel config={config} result={result} recommendation={recommendation} />
             )}
           </div>
         </div>

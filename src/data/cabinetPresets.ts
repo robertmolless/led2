@@ -64,3 +64,19 @@ export function getPresetById(id: string): CabinetPreset {
   }
   return preset;
 }
+
+/** Модуль-«половинка» для заливки остатка по высоте (0.5×0.5). */
+export const HALF_FILL_PRESET_ID = "p26-0.5x0.5";
+
+export function getHalfFillPreset(pixelPitch: string): CabinetPreset {
+  // Берём 0.5×0.5 той же серии (сейчас серия одна — P2.6).
+  const half = CABINET_PRESETS.find(
+    (p) => p.pixelPitch === pixelPitch && p.widthMeters === 0.5 && p.heightMeters === 0.5
+  );
+  return half ?? CABINET_PRESETS[0];
+}
+
+/** Является ли пресет «метровым» модулем (0.5×1), который можно дополнять половинками. */
+export function isTallModule(p: CabinetPreset): boolean {
+  return Math.abs(p.heightMeters - 1.0) < 1e-6;
+}

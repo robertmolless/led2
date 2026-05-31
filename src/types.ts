@@ -17,6 +17,28 @@ export interface CabinetPreset {
   orientable: boolean;
 }
 
+
+export interface Processor {
+  id: string;
+  name: string;
+  portCount: number;
+  maxPixelsPerPort: number;
+  maxTotalPixels: number;
+  maxWidth: number;
+  maxHeight: number;
+  hasVideoProcessing: boolean;
+  note: string;
+}
+
+export interface ProcessorRecommendation {
+  processor: Processor;
+  unitsNeeded: number;   // сколько штук такого процессора нужно (обычно 1)
+  fits: boolean;         // влезает ли проект в один процессор
+  reasons: string[];     // человекочитаемое объяснение «почему»
+}
+
+export type ProcessorMode = "auto" | "manual";
+
 export type Orientation = "horizontal" | "vertical";
 
 export type SignalRoutingMode =
@@ -52,6 +74,11 @@ export interface ScreenConfig {
   backupSide: BackupSide;
   legsMode: LegsMode;
   manualLegs: number;
+  /**
+   * Докидывать ли ряд модулей 0.5×0.5, если высота не делится нацело на 1 м
+   * (актуально только когда основной модуль — 0.5×1). По умолчанию true.
+   */
+  fillHalfModules: boolean;
 }
 
 /**
@@ -67,6 +94,8 @@ export interface ProjectConfig {
   showCabinetNumbers: boolean;
   showPortNumbers: boolean;
   showLegend: boolean;
+  processorMode: ProcessorMode;   // авто-подбор или ручной выбор процессора
+  processorId: string;            // выбранный вручную процессор (при manual)
   screens: ScreenConfig[];
 }
 

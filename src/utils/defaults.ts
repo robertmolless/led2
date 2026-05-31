@@ -15,11 +15,13 @@ export function makeDefaultScreen(partial?: Partial<ScreenConfig>): ScreenConfig
     widthMeters: 7,
     heightMeters: 3,
     orientation: "horizontal",
-    signalRoutingMode: "snake_rows",
+    // Линейная разводка по умолчанию: ряды-линии, без змеек.
+    signalRoutingMode: "horizontal_rows",
     signalInputSide: "left",
     backupSide: "opposite",
     legsMode: "auto",
     manualLegs: 6,
+    fillHalfModules: true,
     ...partial
   };
 }
@@ -28,18 +30,18 @@ export function makeDefaultConfig(): ProjectConfig {
   return {
     projectName: "Новый проект",
     cabinetPresetId: DEFAULT_PRESET_ID,
-    // Для сценических сборок схему смотрят «из зала» — вид спереди.
     viewMode: "front",
     powerRoutingMode: "same_as_signal",
     backupEnabled: true,
     showCabinetNumbers: true,
     showPortNumbers: true,
     showLegend: true,
+    processorMode: "auto",
+    processorId: "vx1000",
     screens: [makeDefaultScreen({ name: "Центр" })]
   };
 }
 
-/** Быстрый пресет: три экрана (Левый / Центр / Правый) — типовая сцена. */
 export function makeStageLCRConfig(): ProjectConfig {
   const base = makeDefaultConfig();
   return {

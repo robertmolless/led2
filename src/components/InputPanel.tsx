@@ -1,21 +1,28 @@
-import type { ProjectConfig, ScreenConfig } from "../types";
+import { useState } from "react";
+import type { ProjectConfig, ScreenConfig, ProcessorRecommendation } from "../types";
 import {
   CABINET_PRESETS,
   canonicalPresetId,
-  getPresetById
+  getPresetById,
+  isTallModule
 } from "../data/cabinetPresets";
+import { PROCESSORS } from "../data/processors";
 import { NumericField } from "./NumericField";
 import { makeDefaultScreen, makeStageLCRConfig } from "../utils/defaults";
 
 interface Props {
   config: ProjectConfig;
   onChange: (next: ProjectConfig) => void;
+  recommendation?: ProcessorRecommendation;
 }
 
-export function InputPanel({ config, onChange }: Props) {
+export function InputPanel({ config, onChange, recommendation }: Props) {
   const preset = getPresetById(config.cabinetPresetId);
   const presetIdForSelect = canonicalPresetId(config.cabinetPresetId);
+  const tall = isTallModule(preset);
   const patch = (p: Partial<ProjectConfig>) => onChange({ ...config, ...p });
+
+  const [showWhy, setShowWhy] = useState(false);
 
   const updateScreen = (id: string, p: Partial<ScreenConfig>) =>
     patch({ screens: config.screens.map((s) => (s.id === id ? { ...s, ...p } : s)) });
@@ -52,7 +59,7 @@ export function InputPanel({ config, onChange }: Props) {
         </label>
 
         <label className="field">
-          <span>Модуль</span>
+          <span>Основной модуль</span>
           <select
             value={presetIdForSelect}
             onChange={(e) => patch({ cabinetPresetId: e.target.value })}
@@ -75,40 +82,88 @@ export function InputPanel({ config, onChange }: Props) {
         </label>
 
         <label className="field field-checkbox">
-          <input
-            type="checkbox"
-            checked={config.backupEnabled}
-            onChange={(e) => patch({ backupEnabled: e.target.checked })}
-          />
+          <input type="checkbox" checked={config.backupEnabled} onChange={(e) => patch({ backupEnabled: e.target.checked })} />
           <span>Backup включён</span>
         </label>
-
         <label className="field field-checkbox">
-          <input
-            type="checkbox"
-            checked={config.showCabinetNumbers}
-            onChange={(e) => patch({ showCabinetNumbers: e.target.checked })}
-          />
+          <input type="checkbox" checked={config.showCabinetNumbers} onChange={(e) => patch({ showCabinetNumbers: e.target.checked })} />
           <span>Показывать номера модулей</span>
         </label>
-
         <label className="field field-checkbox">
-          <input
-            type="checkbox"
-            checked={config.showPortNumbers}
-            onChange={(e) => patch({ showPortNumbers: e.target.checked })}
-          />
+          <input type="checkbox" checked={config.showPortNumbers} onChange={(e) => patch({ showPortNumbers: e.target.checked })} />
           <span>Показывать номера портов</span>
         </label>
-
         <label className="field field-checkbox">
-          <input
-            type="checkbox"
-            checked={config.showLegend}
-            onChange={(e) => patch({ showLegend: e.target.checked })}
-          />
+          <input type="checkbox" checked={config.showLegend} onChange={(e) => patch({ showLegend: e.target.checked })} />
           <span>Показывать легенду</span>
         </label>
+      </div>
+
+      {/* ===== Процессор ===== */}
+      <div className="processor-block">
+        <div className="processor-head">
+          <h3 className="panel-title" style={{ margin: 0 }}>Процессор</h3>
+          <button
+            type="button"
+            className="why-btn"
+            onClick={() => setShowWhy((v) => !v)}
+            title="Почему этот процессор?"
+            aria-label="Почему этот процессор?"
+          >?</button>
+        </div>
+
+        <label className="field">
+          <span>Подбор</span>
+          <select
+            value={config.processorMode}
+            onChange={(e) => patch({ processorMode: e.target.value as ProjectConfig["processorMode"] })}
+          >
+            <option value="auto">Автоматически</option>
+            <option value="manual">Вручную</option>
+          </select>
+        </label>
+
+        {config.processorMode === "manual" && (
+          <label className="field">
+            <span>Модель</span>
+            <select
+              value={config.processorId}
+              onChange={(e) => patch({ processorId: e.target.value })}
+            >
+              {PROCESSORS.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </label>
+        )}
+
+        {recommendation && (
+          <div className={`processor-result ${recommendation.fits ? "" : "over"}`}>
+            <div className="processor-name">
+              {recommendation.unitsNeeded > 1 ? `${recommendation.unitsNeeded}× ` : ""}
+              {recommendation.processor.name}
+              {recommendation.fits ? "" : " — не хватает!"}
+            </div>
+            <div className="processor-spec">
+              {recommendation.processor.portCount} порт · {recommendation.processor.maxTotalPixels.toLocaleString("ru-RU")} px
+            </div>
+          </div>
+        )}
+
+        {showWhy && recommendation && (
+          <div className="why-box">
+            <strong>Почему:</strong>
+            <ul>
+              {recommendation.reasons.map((r, i) => (
+                <li key={i}>{r}</li>
+              ))}
+            </ul>
+            <div className="why-note">
+              Лимит одного порта NovaStar — 650 000 px. Полная ёмкость процессора = порты × 650k.
+              Подбирается минимально достаточная модель, у которой хватает и портов, и пикселей, и размера канвы.
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="screens-head">
@@ -118,7 +173,7 @@ export function InputPanel({ config, onChange }: Props) {
         <button
           type="button"
           className="btn small"
-          onClick={() => onChange({ ...makeStageLCRConfig(), projectName: config.projectName, cabinetPresetId: config.cabinetPresetId })}
+          onClick={() => onChange({ ...makeStageLCRConfig(), projectName: config.projectName, cabinetPresetId: config.cabinetPresetId, processorMode: config.processorMode, processorId: config.processorId })}
           title="Быстрый пресет: Левый / Центр / Правый"
         >
           Сцена L/C/R
@@ -132,7 +187,7 @@ export function InputPanel({ config, onChange }: Props) {
             screen={screen}
             index={idx}
             total={config.screens.length}
-            orientable={preset.orientable}
+            showFill={tall}
             onChange={(p) => updateScreen(screen.id, p)}
             onRemove={() => removeScreen(screen.id)}
             onMove={(d) => moveScreen(screen.id, d)}
@@ -152,8 +207,14 @@ export function InputPanel({ config, onChange }: Props) {
           <div><dt>Разрешение</dt><dd>{preset.pixelWidth}×{preset.pixelHeight} px</dd></div>
           <div><dt>Потребление</dt><dd>{preset.powerWatts} Вт</dd></div>
           <div><dt>Вес</dt><dd>{preset.weightKg} кг</dd></div>
-          <div><dt>Лимит порта</dt><dd>{preset.maxPixelsPerPort.toLocaleString("ru-RU")} px</dd></div>
+          <div><dt>Лимит порта</dt><dd>650 000 px</dd></div>
         </dl>
+        {tall && (
+          <div className="module-hint">
+            Модуль 0.5×1 — высокий. Если высота экрана не кратна 1 м, сверху можно
+            докинуть ряд модулей 0.5×0.5 (тумблер «Добор 0.5» в карточке экрана).
+          </div>
+        )}
       </div>
     </div>
   );
@@ -163,13 +224,20 @@ interface CardProps {
   screen: ScreenConfig;
   index: number;
   total: number;
-  orientable: boolean;
+  showFill: boolean;
   onChange: (p: Partial<ScreenConfig>) => void;
   onRemove: () => void;
   onMove: (dir: -1 | 1) => void;
 }
 
-function ScreenCard({ screen, index, total, orientable, onChange, onRemove, onMove }: CardProps) {
+function ScreenCard({ screen, index, total, showFill, onChange, onRemove, onMove }: CardProps) {
+  // Режим разводки: показываем только линейные (без змеек). Старые значения
+  // snake_* отображаем как их линейные аналоги.
+  const routing =
+    screen.signalRoutingMode === "vertical_columns" || screen.signalRoutingMode === "snake_columns"
+      ? "vertical_columns"
+      : "horizontal_rows";
+
   return (
     <div className="screen-card">
       <div className="screen-card-head">
@@ -193,23 +261,14 @@ function ScreenCard({ screen, index, total, orientable, onChange, onRemove, onMo
           <NumericField label="Высота, м" value={screen.heightMeters} min={0.5} onChange={(n) => onChange({ heightMeters: n })} />
         </div>
 
-        {orientable && (
-          <label className="field">
-            <span>Ориентация модуля</span>
-            <select value={screen.orientation} onChange={(e) => onChange({ orientation: e.target.value as ScreenConfig["orientation"] })}>
-              <option value="horizontal">Горизонтальная</option>
-              <option value="vertical">Вертикальная</option>
-            </select>
-          </label>
-        )}
-
         <label className="field">
           <span>Разводка сигнала</span>
-          <select value={screen.signalRoutingMode} onChange={(e) => onChange({ signalRoutingMode: e.target.value as ScreenConfig["signalRoutingMode"] })}>
-            <option value="horizontal_rows">Горизонтально по рядам</option>
-            <option value="snake_rows">Змейка по рядам</option>
-            <option value="vertical_columns">Вертикально по колонкам</option>
-            <option value="snake_columns">Змейка по колонкам</option>
+          <select
+            value={routing}
+            onChange={(e) => onChange({ signalRoutingMode: e.target.value as ScreenConfig["signalRoutingMode"] })}
+          >
+            <option value="horizontal_rows">Горизонтально в линию</option>
+            <option value="vertical_columns">Вертикально в линию</option>
           </select>
         </label>
 
@@ -223,16 +282,16 @@ function ScreenCard({ screen, index, total, orientable, onChange, onRemove, onMo
           </select>
         </label>
 
-        <label className="field">
-          <span>Сторона backup</span>
-          <select value={screen.backupSide} onChange={(e) => onChange({ backupSide: e.target.value as ScreenConfig["backupSide"] })}>
-            <option value="opposite">Противоположно</option>
-            <option value="left">Слева</option>
-            <option value="right">Справа</option>
-            <option value="top">Сверху</option>
-            <option value="bottom">Снизу</option>
-          </select>
-        </label>
+        {showFill && (
+          <label className="field field-checkbox">
+            <input
+              type="checkbox"
+              checked={screen.fillHalfModules !== false}
+              onChange={(e) => onChange({ fillHalfModules: e.target.checked })}
+            />
+            <span>Добор 0.5 (докидывать ряд 0.5×0.5)</span>
+          </label>
+        )}
 
         <label className="field">
           <span>Стойки</span>

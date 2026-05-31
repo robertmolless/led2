@@ -1,12 +1,13 @@
-import type { ProjectConfig, ProjectResult, ScreenResult } from "../types";
+import type { ProjectConfig, ProjectResult, ScreenResult, ProcessorRecommendation } from "../types";
 import { formatKg, formatKw } from "../utils/calculations";
 
 interface Props {
   config: ProjectConfig;
   result: ProjectResult;
+  recommendation?: ProcessorRecommendation;
 }
 
-export function ResultsPanel({ result }: Props) {
+export function ResultsPanel({ result, recommendation }: Props) {
   const multi = result.screenCount > 1;
   return (
     <div className="panel results-panel">
@@ -23,6 +24,13 @@ export function ResultsPanel({ result }: Props) {
           <Row k="Мощность" v={formatKw(result.totalPowerKw)} />
           <Row k="Вес" v={formatKg(result.totalWeightKg)} />
           <Row k="Ноги" v={result.totalLegs} />
+          {recommendation && (
+            <Row
+              k="Процессор"
+              v={`${recommendation.unitsNeeded > 1 ? recommendation.unitsNeeded + "× " : ""}${recommendation.processor.name}`}
+              warn={!recommendation.fits}
+            />
+          )}
         </ul>
       </section>
 
