@@ -164,10 +164,14 @@ export function InputPanel({ config, onChange, recommendation, patchPlan }: Prop
           <div className="why-box">
             <strong>Как считается:</strong>
             <ul>
-              <li>Каждый экран занимает порты: ряд = порт (без змеек); с backup число удваивается.</li>
-              <li>Экраны упаковываются на процессор, пока хватает портов и пикселей.</li>
-              <li>Кончились ресурсы — берётся следующий процессор.</li>
-              {recommendation && recommendation.reasons.slice(0, 2).map((r, i) => <li key={i}>{r}</li>)}
+              <li>Порты: ряд = порт (без змеек); с backup число удваивается.</li>
+              <li><b>Авто:</b> экраны упаковываются на процессор, пока хватает портов и пикселей; кончились — берётся следующий.</li>
+              <li><b>Вручную:</b> для каждого экрана выбирается свой процессор в его карточке.</li>
+              <li><b>Кофры:</b> 0.5×0.5 — 8 шт в кофре, 0.5×1 — 6 шт. Число = округление вверх (модули÷вместимость).</li>
+              <li><b>Силовые вводы:</b> мощность ÷ 3.5 кВт (16 А), округление вверх.</li>
+              <li><b>Линии данных:</b> число портов × 2 при backup (по кабелю на порт).</li>
+              <li><b>Выходы HDMI:</b> по одному на каждый процессор; несколько экранов на одном — LINK SPLIT.</li>
+              {recommendation && recommendation.reasons.slice(0, 1).map((r, i) => <li key={i}>{r}</li>)}
             </ul>
             <div className="why-note">
               Лимит одного порта NovaStar — 650 000 px. Полная ёмкость = порты × 650k.
@@ -198,6 +202,8 @@ export function InputPanel({ config, onChange, recommendation, patchPlan }: Prop
             index={idx}
             total={config.screens.length}
             showFill={tall}
+            manualMode={config.processorMode === "manual"}
+            defaultProcessorId={config.processorId}
             onChange={(p) => updateScreen(screen.id, p)}
             onRemove={() => removeScreen(screen.id)}
             onMove={(d) => moveScreen(screen.id, d)}
@@ -235,12 +241,14 @@ interface CardProps {
   index: number;
   total: number;
   showFill: boolean;
+  manualMode: boolean;
+  defaultProcessorId: string;
   onChange: (p: Partial<ScreenConfig>) => void;
   onRemove: () => void;
   onMove: (dir: -1 | 1) => void;
 }
 
-function ScreenCard({ screen, index, total, showFill, onChange, onRemove, onMove }: CardProps) {
+function ScreenCard({ screen, index, total, showFill, manualMode, defaultProcessorId, onChange, onRemove, onMove }: CardProps) {
   // Режим разводки: показываем только линейные (без змеек). Старые значения
   // snake_* отображаем как их линейные аналоги.
   const routing =
@@ -300,6 +308,20 @@ function ScreenCard({ screen, index, total, showFill, onChange, onRemove, onMove
               onChange={(e) => onChange({ fillHalfModules: e.target.checked })}
             />
             <span>Добор 0.5 (докидывать ряд 0.5×0.5)</span>
+          </label>
+        )}
+
+        {manualMode && (
+          <label className="field">
+            <span>Процессор экрана</span>
+            <select
+              value={screen.processorId ?? defaultProcessorId}
+              onChange={(e) => onChange({ processorId: e.target.value })}
+            >
+              {PROCESSORS.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
           </label>
         )}
 

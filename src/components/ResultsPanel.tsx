@@ -1,6 +1,6 @@
 import type { ProjectConfig, ProjectResult, ScreenResult, ProcessorRecommendation, PatchPlan, ScreenPatch } from "../types";
 import { formatKg, formatKw } from "../utils/calculations";
-import { formatPorts } from "../utils/processor";
+import { formatPortsSlash, buildLinkInfo } from "../utils/processor";
 
 interface Props {
   config: ProjectConfig;
@@ -26,11 +26,30 @@ export function ResultsPanel({ config, result, patchPlan }: Props) {
           <Row k="Мощность" v={formatKw(result.totalPowerKw)} />
           <Row k="Вес" v={formatKg(result.totalWeightKg)} />
           <Row k="Ноги" v={result.totalLegs} />
+          <Row
+            k="Кофры"
+            v={`${result.cases.total}${casesDetail(result)}`}
+          />
+          <Row k="Силовые вводы" v={`${result.powerInputs} (16А)`} />
+          <Row k="Линии данных" v={`${result.dataLines}${result.backupEnabled ? " (с backup)" : ""}`} />
+          {patchPlan && (
+            <Row k="Выходы HDMI" v={patchPlan.units.length} />
+          )}
           {patchPlan && (
             <Row k="Процессоры" v={summarizeModels(patchPlan)} />
           )}
         </ul>
       </section>
+
+      {/* Выходы и линки */}
+      {patchPlan && patchPlan.units.length > 0 && (
+        <section className="result-section">
+          <h3>Выходы / линки</h3>
+          {buildLinkInfo(patchPlan).lines.map((l, i) => (
+            <div key={i} className="link-line">{l}</div>
+          ))}
+        </section>
+      )}
 
       {/* Патч-лист по процессорам */}
       {patchPlan && patchPlan.units.length > 0 && (
@@ -66,12 +85,11 @@ export function ResultsPanel({ config, result, patchPlan }: Props) {
 function PatchScreen({ name, sp, backup }: { name: string; sp: ScreenPatch; backup: boolean }) {
   return (
     <div className="patch-screen">
-      <div className="patch-screen-name">{name} · {sp.edid}</div>
-      <div className="patch-screen-route">{sp.routingText}</div>
+      <div className="patch-screen-name">{name} · {sp.processorName} · {sp.edid}</div>
       <div className="patch-ports">
-        <span className="patch-up">UP: {formatPorts(sp.upPorts)}</span>
+        <span className="patch-up">{formatPortsSlash(sp.upPorts)} UP</span>
         {backup && sp.backupPorts.length > 0 && (
-          <span className="patch-bk">BACKUP: {formatPorts(sp.backupPorts)}</span>
+          <span className="patch-bk">{formatPortsSlash(sp.backupPorts)} BACKUP</span>
         )}
       </div>
       <div className="patch-mode">MODE: {sp.mode}</div>
@@ -112,6 +130,13 @@ function ScreenBlock({ s }: { s: ScreenResult }) {
       )}
     </section>
   );
+}
+
+function casesDetail(r: ProjectResult): string {
+  const parts: string[] = [];
+  if (r.modulesByType.tall > 0) parts.push(`0.5×1: ${r.cases.tall}`);
+  if (r.modulesByType.half > 0) parts.push(`0.5×0.5: ${r.cases.half}`);
+  return parts.length ? ` (${parts.join(", ")})` : "";
 }
 
 function strip(n: number): string {

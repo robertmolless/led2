@@ -22,6 +22,7 @@ export function makeDefaultScreen(partial?: Partial<ScreenConfig>): ScreenConfig
     legsMode: "auto",
     manualLegs: 6,
     fillHalfModules: true,
+    processorId: "vx1000",
     ...partial
   };
 }

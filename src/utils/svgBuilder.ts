@@ -19,8 +19,8 @@ import type {
   ScreenPatch
 } from "../types";
 import { formatKw, formatKg, aspectRatio } from "./calculations";
-import { formatPorts } from "./processor";
-import { LOGO_WEBP_DATA_URI, LOGO_ASPECT } from "../data/logo";
+import { formatPortsSlash, buildLinkInfo } from "./processor";
+import { LOGO_DATA_URI, LOGO_ASPECT } from "../data/logo";
 
 const C = {
   bg: "#ffffff",
@@ -75,7 +75,7 @@ export function buildSchemeSvg({ config, result, recommendation, patchPlan }: Bu
   // Высоты зон шапки: текст + (опц.) легенда стопкой, плюс лого справа сверху.
   const headerTextH = 12 + 24 + Math.max(0, headerLines.length - 1) * 20;
   const legendH = config.showLegend ? 5 * 24 + 14 : 0;
-  const LOGO_H = 58;
+  const LOGO_H = 88;
   const logoChipH = LOGO_H + 24;
   const headerH = Math.max(headerTextH + legendH, logoChipH);
 
@@ -149,7 +149,7 @@ function drawLogo(parts: string[], rightX: number, topY: number, logoH: number) 
     `<rect x="${round(chipX)}" y="${round(chipY)}" width="${round(chipW)}" height="${round(chipH)}" rx="12" ry="12" fill="#0f172a"/>`
   );
   parts.push(
-    `<image x="${round(chipX + pad)}" y="${round(chipY + pad)}" width="${round(logoW)}" height="${round(logoH)}" href="${LOGO_WEBP_DATA_URI}" preserveAspectRatio="xMidYMid meet"/>`
+    `<image x="${round(chipX + pad)}" y="${round(chipY + pad)}" width="${round(logoW)}" height="${round(logoH)}" href="${LOGO_DATA_URI}" preserveAspectRatio="xMidYMid meet"/>`
   );
 }
 
@@ -233,8 +233,8 @@ function drawScreen(
   }
 
   // Сигнал/питание по портам.
-  screen.ports.forEach((port) => {
-    drawPort(parts, port, config, L);
+  screen.ports.forEach((port, idx) => {
+    drawPort(parts, port, config, L, patch, idx);
   });
 
   // Стойки: по 1 на метр, ставятся ВНУТРИ — по центру каждого метрового сегмента.
@@ -266,7 +266,14 @@ function drawScreen(
 
 // ===========================================================================
 
-function drawPort(parts: string[], port: PortGroup, config: ProjectConfig, L: ScreenLayout) {
+function drawPort(
+  parts: string[],
+  port: PortGroup,
+  config: ProjectConfig,
+  L: ScreenLayout,
+  patch?: ScreenPatch,
+  portIndex = 0
+) {
   if (port.cabinets.length === 0) return;
   const cells = port.cabinets;
   const first = cells[0];
@@ -309,18 +316,28 @@ function drawPort(parts: string[], port: PortGroup, config: ProjectConfig, L: Sc
   parts.push(squareBadge(firstRect.cx, firstRect.cy, uSize, C.uFill, "U", C.uText));
 
   if (config.showPortNumbers) {
-    // Номер порта — рядом с U, со стороны входа сигнала.
-    const lx = isHorizontal ? firstRect.cx : firstRect.cx;
-    const ly = isHorizontal ? firstRect.cy - uSize / 2 - 8 : firstRect.cy - uSize / 2 - 8;
+    // Метка UP: номер физического порта процессора (из патча), иначе локальный.
+    const upNum = patch && patch.upPorts[portIndex] != null ? patch.upPorts[portIndex] : port.portNumber;
+    const lx = firstRect.cx;
+    const ly = firstRect.cy - uSize / 2 - 8;
     parts.push(
-      `<text x="${round(lx)}" y="${round(ly)}" text-anchor="middle" dominant-baseline="alphabetic" font-family="system-ui" font-size="12" fill="${C.text}" font-weight="700">P${port.portNumber}</text>`
+      `<text x="${round(lx)}" y="${round(ly)}" text-anchor="middle" dominant-baseline="alphabetic" font-family="system-ui" font-size="12" fill="${C.text}" font-weight="700">UP${upNum}</text>`
     );
   }
 
-  // B в центре последней ячейки (если backup включён и порт не из одной ячейки,
-  // иначе B сел бы поверх U — в этом случае ставим B всё равно, но это вырожденный порт).
+  // B в центре последней ячейки + метка Backup (номер порта из патча).
   if (config.backupEnabled) {
     parts.push(squareBadge(lastRect.cx, lastRect.cy, bSize, C.bFill, "B", C.bText));
+    if (config.showPortNumbers) {
+      const bkNum = patch && patch.backupPorts[portIndex] != null ? patch.backupPorts[portIndex] : null;
+      if (bkNum != null) {
+        const lx = lastRect.cx;
+        const ly = lastRect.cy + bSize / 2 + 14;
+        parts.push(
+          `<text x="${round(lx)}" y="${round(ly)}" text-anchor="middle" dominant-baseline="alphabetic" font-family="system-ui" font-size="11" fill="${C.textMuted}" font-weight="700">Backup${bkNum}</text>`
+        );
+      }
+    }
   }
 }
 
@@ -386,6 +403,16 @@ function buildAllLines(
   lines.push(`Экранов: ${r.screenCount} · Модулей: ${r.totalCabinets}`);
   lines.push(`Энергопотребление: ${formatKw(r.totalPowerKw)} · Вес: ${formatKg(r.totalWeightKg)}`);
   lines.push(`Портов всего: ${r.totalPorts} · Ноги: ${r.totalLegs}`);
+
+  // Кофры (флайт-кейсы) по типам модулей.
+  const caseParts: string[] = [];
+  if (r.modulesByType.tall > 0) caseParts.push(`0.5×1: ${r.cases.tall} (по 6)`);
+  if (r.modulesByType.half > 0) caseParts.push(`0.5×0.5: ${r.cases.half} (по 8)`);
+  lines.push(`Кофры: ${r.cases.total}${caseParts.length ? " — " + caseParts.join(", ") : ""}`);
+
+  // Вводные по проводам.
+  lines.push(`Вводные: силовых ${r.powerInputs} (16А≈3.5кВт), линий данных ${r.dataLines}${r.backupEnabled ? " (с backup)" : ""}`);
+
   if (patch && patch.units.length > 0) {
     // Сводка по моделям (могут быть разные).
     const counts = new Map<string, number>();
@@ -397,6 +424,10 @@ function buildAllLines(
         `  Проц №${unit.index} (${unit.processor.name}): ${unit.screenNames.join(", ")} — ${unit.usedPorts}/${unit.processor.portCount} порт.`
       );
     });
+    // Выходы/линки.
+    const link = buildLinkInfo(patch);
+    lines.push(`Выходы HDMI: ${link.hdmiOutputs}`);
+    link.lines.forEach((l) => lines.push(`  ${l}`));
   }
   lines.push(`Вид: ${config.viewMode === "front" ? "из зала (спереди)" : "сзади"}`);
   return lines;
@@ -418,11 +449,10 @@ function buildScreenCaption(
   // Патч-блок (в стиле инженерного патч-листа).
   if (patch) {
     lines.push({ text: `Патч. ${s.name} ${stripZero(s.actualWidthM)}×${stripZero(s.actualHeightM)} м`, bold: true, accent: true });
-    lines.push({ text: patch.routingText });
     lines.push({ text: `${patch.processorName} · Проц №${patch.unitIndex}` });
-    lines.push({ text: `UP: ${formatPorts(patch.upPorts)}` });
+    lines.push({ text: `${formatPortsSlash(patch.upPorts)} UP` });
     if (backupEnabled && patch.backupPorts.length > 0) {
-      lines.push({ text: `BACKUP: ${formatPorts(patch.backupPorts)}` });
+      lines.push({ text: `${formatPortsSlash(patch.backupPorts)} BACKUP` });
     }
     lines.push({ text: `MODE: ${patch.mode}` });
     lines.push({ text: `EDID: ${patch.edid}` });

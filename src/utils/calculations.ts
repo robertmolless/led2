@@ -203,6 +203,7 @@ export function calculateScreen(
 
   return {
     id: screen.id,
+    processorId: screen.processorId,
     name: screen.name,
     signalInputSide: screen.signalInputSide,
     signalRoutingMode: screen.signalRoutingMode,
@@ -256,6 +257,28 @@ export function calculateProject(config: ProjectConfig): ProjectResult {
     r.warnings.forEach((w) => warnings.push(`[${r.name}] ${w}`));
   });
 
+  // Кофры (флайт-кейсы): считаем модули по типам и делим на вместимость кофра.
+  //   0.5×0.5 → 8 шт в кофре;  0.5×1 → 6 шт в кофре.
+  const CASE_CAP_HALF = 8;
+  const CASE_CAP_TALL = 6;
+  let halfMods = 0;
+  let tallMods = 0;
+  screens.forEach((r) => {
+    r.cabinets.forEach((c) => {
+      if (Math.abs(c.height - 1.0) < 1e-6) tallMods += 1;
+      else halfMods += 1; // 0.5×0.5 и любой не-метровый
+    });
+  });
+  const casesHalf = Math.ceil(halfMods / CASE_CAP_HALF);
+  const casesTall = Math.ceil(tallMods / CASE_CAP_TALL);
+
+  // Вводные по проводам:
+  //   - силовые: 16 А ≈ 3.5 кВт на ввод → ceil(полная мощность / 3.5);
+  //   - линии данных: число портов × (backup ? 2 : 1).
+  const KW_PER_POWER_INPUT = 3.5;
+  const powerInputs = Math.max(1, Math.ceil(totalPowerKw / KW_PER_POWER_INPUT));
+  const dataLines = totalPorts * (config.backupEnabled ? 2 : 1);
+
   return {
     screens,
     screenCount: screens.length,
@@ -271,7 +294,12 @@ export function calculateProject(config: ProjectConfig): ProjectResult {
     combinedResolutionY,
     warnings,
     pixelPitch: preset.pixelPitch,
-    moduleName: preset.name
+    moduleName: preset.name,
+    modulesByType: { half: halfMods, tall: tallMods },
+    cases: { half: casesHalf, tall: casesTall, total: casesHalf + casesTall },
+    powerInputs,
+    dataLines,
+    backupEnabled: config.backupEnabled
   };
 }
 

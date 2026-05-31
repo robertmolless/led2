@@ -187,46 +187,58 @@ function smallestModelFor(ports: number, pixels: number, w: number, h: number): 
 export function buildPatchPlan(config: ProjectConfig, result: ProjectResult): PatchPlan {
   const backup = config.backupEnabled;
   const warnings: string[] = [];
-  const manualModel = config.processorMode === "manual" ? getProcessorById(config.processorId) : undefined;
+  const isManual = config.processorMode === "manual";
 
   const top = PROCESSORS_BY_CAPACITY[PROCESSORS_BY_CAPACITY.length - 1];
 
-  // Экраны от тяжёлого к лёгкому (по портам) для эффективной упаковки,
-  // но сохраняем исходный индекс для стабильной нумерации внутри юнита.
-  const indexed = result.screens.map((s, i) => ({ s, i }));
-  const order = [...indexed].sort(
-    (a, b) => screenPortsNeeded(b.s, backup) - screenPortsNeeded(a.s, backup)
-  );
-
   const bins: Bin[] = [];
 
-  for (const { s } of order) {
-    const need = screenPortsNeeded(s, backup);
-    const px = s.totalPixels;
-
-    // Пытаемся подсадить в существующий юнит (по его модели).
-    const fitBin = bins.find(
-      (b) =>
-        b.ports + need <= b.processor.portCount &&
-        b.pixels + px <= b.processor.maxTotalPixels
+  if (isManual) {
+    // РУЧНОЙ режим: для КАЖДОГО экрана — свой процессор (его processorId,
+    // иначе общий config.processorId). Без упаковки нескольких экранов в один
+    // юнит — так каждый экран явно сидит на выбранной модели.
+    for (const s of result.screens) {
+      const need = screenPortsNeeded(s, backup);
+      const px = s.totalPixels;
+      const model =
+        getProcessorById(s.processorId ?? config.processorId) ?? top;
+      if (need > model.portCount || px > model.maxTotalPixels) {
+        warnings.push(
+          `Экран «${s.name}»: ${model.name} не тянет (${need} порт./${px.toLocaleString("ru-RU")} px при лимите ${model.portCount} порт./${model.maxTotalPixels.toLocaleString("ru-RU")} px).`
+        );
+      }
+      bins.push({ processor: model, screens: [s], ports: need, pixels: px });
+    }
+  } else {
+    // АВТО: упаковка экранов по ресурсам, модель подбирается под каждый юнит.
+    const indexed = result.screens.map((s, i) => ({ s, i }));
+    const order = [...indexed].sort(
+      (a, b) => screenPortsNeeded(b.s, backup) - screenPortsNeeded(a.s, backup)
     );
-    if (fitBin) {
-      fitBin.screens.push(s);
-      fitBin.ports += need;
-      fitBin.pixels += px;
-      continue;
-    }
-
-    // Новый юнит: модель = выбранная вручную, либо минимально достаточная.
-    let model = manualModel ?? smallestModelFor(need, px, s.resolutionX, s.resolutionY);
-    if (!model) {
-      model = manualModel ?? top;
-      warnings.push(
-        `Экран «${s.name}» требует ${need} порт(ов)/${px.toLocaleString("ru-RU")} px — ` +
-          `больше, чем у ${model.name} (${model.portCount} порт., ${model.maxTotalPixels.toLocaleString("ru-RU")} px). Нужна разбивка/каскад.`
+    for (const { s } of order) {
+      const need = screenPortsNeeded(s, backup);
+      const px = s.totalPixels;
+      const fitBin = bins.find(
+        (b) =>
+          b.ports + need <= b.processor.portCount &&
+          b.pixels + px <= b.processor.maxTotalPixels
       );
+      if (fitBin) {
+        fitBin.screens.push(s);
+        fitBin.ports += need;
+        fitBin.pixels += px;
+        continue;
+      }
+      let model = smallestModelFor(need, px, s.resolutionX, s.resolutionY);
+      if (!model) {
+        model = top;
+        warnings.push(
+          `Экран «${s.name}» требует ${need} порт(ов)/${px.toLocaleString("ru-RU")} px — ` +
+            `больше, чем у ${model.name}. Нужна разбивка/каскад.`
+        );
+      }
+      bins.push({ processor: model, screens: [s], ports: need, pixels: px });
     }
-    bins.push({ processor: model, screens: [s], ports: need, pixels: px });
   }
 
   // Сортируем юниты по исходному порядку их первого экрана — стабильный вывод.
@@ -288,7 +300,7 @@ export function buildPatchPlan(config: ProjectConfig, result: ProjectResult): Pa
   const model =
     units.length > 0
       ? units.map((u) => u.processor).sort((a, b) => b.maxTotalPixels - a.maxTotalPixels)[0]
-      : manualModel ?? top;
+      : top;
 
   return { units, model, perScreen, warnings };
 }
@@ -299,4 +311,37 @@ export function formatPorts(ports: number[]): string {
   const consecutive = ports.every((p, i) => i === 0 || p === ports[i - 1] + 1);
   if (consecutive && ports.length > 2) return `${ports[0]}-${ports[ports.length - 1]}`;
   return ports.join("/");
+}
+
+/** Список портов через слэш: [1,2,3,4,5,6] → "1/2/3/4/5/6". */
+export function formatPortsSlash(ports: number[]): string {
+  if (ports.length === 0) return "—";
+  return ports.join("/");
+}
+
+// ===========================================================================
+//  ВЫХОДЫ И ЛИНКИ: что куда выводится (HDMI), где нужен LINK SPLIT
+// ===========================================================================
+
+export interface LinkInfo {
+  hdmiOutputs: number;     // сколько HDMI-выходов с медиасервера нужно
+  lines: string[];         // человекочитаемые строки OUTPUT/LINK
+}
+
+/**
+ * Сводка по выходам и линкам.
+ *  - Каждый процессорный юнит = минимум один HDMI-вход (выход с сервера).
+ *  - Если на одном юните несколько экранов — это LINK SPLIT (один сигнал
+ *    делится между экранами через патч, как 6s1+6s2).
+ */
+export function buildLinkInfo(plan: PatchPlan): LinkInfo {
+  const lines: string[] = [];
+  plan.units.forEach((u) => {
+    const names = u.screenNames.join(" + ");
+    lines.push(`OUTPUT ${u.index}: HDMI → ${u.processor.name} → ${names}`);
+    if (u.screenNames.length > 1) {
+      lines.push(`   LINK SPLIT: ${names} (общий сигнал, патч VCAN)`);
+    }
+  });
+  return { hdmiOutputs: plan.units.length, lines };
 }

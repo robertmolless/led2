@@ -114,6 +114,8 @@ export interface ScreenConfig {
    * (актуально только когда основной модуль — 0.5×1). По умолчанию true.
    */
   fillHalfModules: boolean;
+  /** Процессор для этого экрана при ручном выборе (id). Иначе берётся общий. */
+  processorId?: string;
 }
 
 /**
@@ -163,6 +165,7 @@ export interface PortGroup {
 export interface ScreenResult {
   id: string;
   name: string;
+  processorId?: string;        // выбранный вручную процессор экрана (если есть)
   signalInputSide: SideName;
   signalRoutingMode: SignalRoutingMode;
   requestedWidthM: number;
@@ -225,6 +228,15 @@ export interface ProjectResult {
   warnings: string[]; // агрегированные, с префиксом имени экрана
   pixelPitch: string;
   moduleName: string;
+
+  // Кофры (флайт-кейсы) по типам модулей.
+  modulesByType: { half: number; tall: number };   // 0.5×0.5 и 0.5×1
+  cases: { half: number; tall: number; total: number };
+
+  // Вводные по проводам и линии данных.
+  powerInputs: number;   // силовые вводы (по мощности)
+  dataLines: number;     // линии данных (Ethernet к экранам), с учётом backup
+  backupEnabled: boolean;
 }
 
 export interface SavedProject {
