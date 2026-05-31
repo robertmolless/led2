@@ -1,8 +1,10 @@
 import type {
   CabinetCell,
   CabinetPreset,
-  CalculatedResult,
-  ProjectConfig
+  ProjectConfig,
+  ProjectResult,
+  ScreenConfig,
+  ScreenResult
 } from "../types";
 import { getPresetById } from "../data/cabinetPresets";
 import { buildPortGroups } from "./routing";
@@ -10,7 +12,6 @@ import { buildPortGroups } from "./routing";
 const EPS = 1e-6;
 
 function fmtNum(n: number): string {
-  // Аккуратный вывод числа с двумя знаками без хвостовых нулей.
   if (Math.abs(n - Math.round(n)) < 1e-9) return String(Math.round(n));
   return String(parseFloat(n.toFixed(3)));
 }
@@ -31,42 +32,39 @@ export function resolveCabinetDims(preset: CabinetPreset, orientation: "horizont
 
 function calcLegs(screenWidthM: number, manual: number, mode: "auto" | "manual"): number {
   if (mode === "manual") return Math.max(0, Math.floor(manual));
-  // Эмпирическое правило: одна стойка примерно на каждый метр ширины,
-  // но не меньше двух.
   return Math.max(2, Math.ceil(screenWidthM));
 }
 
-export function calculateProject(config: ProjectConfig): CalculatedResult {
-  const preset = getPresetById(config.cabinetPresetId);
-  const dims = resolveCabinetDims(preset, config.orientation);
+/**
+ * Расчёт ОДНОГО экрана. Полностью независим от других экранов проекта.
+ */
+export function calculateScreen(
+  screen: ScreenConfig,
+  preset: CabinetPreset,
+  signalRoutingMode = screen.signalRoutingMode
+): ScreenResult {
+  const dims = resolveCabinetDims(preset, screen.orientation);
 
-  const screenW = config.screenWidthMeters;
-  const screenH = config.screenHeightMeters;
+  const screenW = screen.widthMeters;
+  const screenH = screen.heightMeters;
 
-  // Сетка кабинетов.
   const rawCountX = screenW / dims.widthM;
   const rawCountY = screenH / dims.heightM;
   const cabinetCountX = Math.max(0, Math.floor(rawCountX + EPS));
   const cabinetCountY = Math.max(0, Math.floor(rawCountY + EPS));
 
-  const totalCabinetsOneScreen = cabinetCountX * cabinetCountY;
-  const screenCount = Math.max(1, Math.floor(config.screenCount));
-  const totalCabinetsAllScreens = totalCabinetsOneScreen * screenCount;
+  const totalCabinets = cabinetCountX * cabinetCountY;
 
-  // Пиксели.
   const pixelsPerCabinet = dims.pixelW * dims.pixelH;
   const resolutionX = cabinetCountX * dims.pixelW;
   const resolutionY = cabinetCountY * dims.pixelH;
-  const totalPixelsOneScreen = totalCabinetsOneScreen * pixelsPerCabinet;
-  const totalPixelsAllScreens = totalPixelsOneScreen * screenCount;
+  const totalPixels = totalCabinets * pixelsPerCabinet;
 
-  // Порты.
   const maxCabinetsPerPort = Math.max(
     1,
     Math.floor(preset.maxPixelsPerPort / pixelsPerCabinet)
   );
 
-  // Построение реальной матрицы кабинетов (в метрах, начало координат — левый-нижний угол экрана).
   const cabinets: CabinetCell[] = [];
   for (let row = 0; row < cabinetCountY; row++) {
     for (let col = 0; col < cabinetCountX; col++) {
@@ -87,10 +85,6 @@ export function calculateProject(config: ProjectConfig): CalculatedResult {
     }
   }
 
-  // Группировка по портам — отдаём в utils/routing.
-  // Сторона ввода сигнала влияет на стартовую точку и направление обхода:
-  // U-плашка («вход сигнала») окажется на первом кабинете цепочки, а B —
-  // на последнем, что соответствует реальной коммутации NovaStar.
   const ports = buildPortGroups(
     cabinets,
     cabinetCountX,
@@ -98,46 +92,31 @@ export function calculateProject(config: ProjectConfig): CalculatedResult {
     maxCabinetsPerPort,
     pixelsPerCabinet,
     preset.maxPixelsPerPort,
-    config.signalRoutingMode,
-    config.signalInputSide
+    signalRoutingMode,
+    screen.signalInputSide
   );
 
-  const portsNeededOneScreen = ports.length;
-  const portsNeededAllScreens = portsNeededOneScreen * screenCount;
-
+  const portsNeeded = ports.length;
   const averagePortLoadPercent =
-    ports.length === 0
-      ? 0
-      : ports.reduce((s, p) => s + p.loadPercent, 0) / ports.length;
+    ports.length === 0 ? 0 : ports.reduce((s, p) => s + p.loadPercent, 0) / ports.length;
   const maxPortLoadPercent =
     ports.length === 0 ? 0 : Math.max(...ports.map((p) => p.loadPercent));
 
-  // Мощность.
-  const totalPowerWattsOneScreen = totalCabinetsOneScreen * preset.powerWatts;
-  const totalPowerKwOneScreen = totalPowerWattsOneScreen / 1000;
-  const totalPowerWattsAllScreens = totalPowerWattsOneScreen * screenCount;
-  const totalPowerKwAllScreens = totalPowerWattsAllScreens / 1000;
+  const totalPowerWatts = totalCabinets * preset.powerWatts;
+  const totalWeightKg = totalCabinets * preset.weightKg;
+  const legsCount = calcLegs(screenW, screen.manualLegs, screen.legsMode);
 
-  // Вес.
-  const totalWeightKgOneScreen = totalCabinetsOneScreen * preset.weightKg;
-  const totalWeightKgAllScreens = totalWeightKgOneScreen * screenCount;
-
-  // Стойки.
-  const legsCount = calcLegs(screenW, config.manualLegs, config.legsMode);
-
-  // Предупреждения.
   const warnings: string[] = [];
-
   if (Math.abs(rawCountX - Math.round(rawCountX)) > 1e-3) {
     warnings.push(
-      `Ширина экрана (${fmtNum(screenW)} м) не делится нацело на ширину модуля (${fmtNum(dims.widthM)} м). ` +
-        `Используется ${cabinetCountX} модулей = ${fmtNum(cabinetCountX * dims.widthM)} м.`
+      `Ширина (${fmtNum(screenW)} м) не делится нацело на ширину модуля (${fmtNum(dims.widthM)} м) → ` +
+        `${cabinetCountX} мод. = ${fmtNum(cabinetCountX * dims.widthM)} м.`
     );
   }
   if (Math.abs(rawCountY - Math.round(rawCountY)) > 1e-3) {
     warnings.push(
-      `Высота экрана (${fmtNum(screenH)} м) не делится нацело на высоту модуля (${fmtNum(dims.heightM)} м). ` +
-        `Используется ${cabinetCountY} модулей = ${fmtNum(cabinetCountY * dims.heightM)} м.`
+      `Высота (${fmtNum(screenH)} м) не делится нацело на высоту модуля (${fmtNum(dims.heightM)} м) → ` +
+        `${cabinetCountY} мод. = ${fmtNum(cabinetCountY * dims.heightM)} м.`
     );
   }
   if (cabinetCountX === 0 || cabinetCountY === 0) {
@@ -152,39 +131,80 @@ export function calculateProject(config: ProjectConfig): CalculatedResult {
   });
 
   return {
+    id: screen.id,
+    name: screen.name,
+    signalInputSide: screen.signalInputSide,
+    requestedWidthM: screenW,
+    requestedHeightM: screenH,
     cabinetWidthM: dims.widthM,
     cabinetHeightM: dims.heightM,
     cabinetPixelW: dims.pixelW,
     cabinetPixelH: dims.pixelH,
-
     cabinetCountX,
     cabinetCountY,
-    totalCabinetsOneScreen,
-    totalCabinetsAllScreens,
-
+    totalCabinets,
     resolutionX,
     resolutionY,
     pixelsPerCabinet,
-    totalPixelsOneScreen,
-    totalPixelsAllScreens,
-
+    totalPixels,
+    actualWidthM: cabinetCountX * dims.widthM,
+    actualHeightM: cabinetCountY * dims.heightM,
     maxCabinetsPerPort,
-    portsNeededOneScreen,
-    portsNeededAllScreens,
+    portsNeeded,
     averagePortLoadPercent,
     maxPortLoadPercent,
-
-    totalPowerWattsOneScreen,
-    totalPowerKwOneScreen,
-    totalPowerWattsAllScreens,
-    totalPowerKwAllScreens,
-    totalWeightKgOneScreen,
-    totalWeightKgAllScreens,
-
+    totalPowerWatts,
+    totalPowerKw: totalPowerWatts / 1000,
+    totalWeightKg,
     legsCount,
     warnings,
     ports,
     cabinets
+  };
+}
+
+/**
+ * Расчёт всего проекта: каждый экран считается отдельно, затем агрегируются
+ * суммарные показатели и габариты «ALL» (экраны в ряд: ширина суммируется,
+ * высота — максимум).
+ */
+export function calculateProject(config: ProjectConfig): ProjectResult {
+  const preset = getPresetById(config.cabinetPresetId);
+  const screens = config.screens.map((s) => calculateScreen(s, preset));
+
+  const totalCabinets = screens.reduce((s, r) => s + r.totalCabinets, 0);
+  const totalPixels = screens.reduce((s, r) => s + r.totalPixels, 0);
+  const totalPowerKw = screens.reduce((s, r) => s + r.totalPowerKw, 0);
+  const totalWeightKg = screens.reduce((s, r) => s + r.totalWeightKg, 0);
+  const totalPorts = screens.reduce((s, r) => s + r.portsNeeded, 0);
+  const totalLegs = screens.reduce((s, r) => s + r.legsCount, 0);
+
+  const combinedWidthM = screens.reduce((s, r) => s + r.actualWidthM, 0);
+  const combinedHeightM = screens.reduce((m, r) => Math.max(m, r.actualHeightM), 0);
+  const combinedResolutionX = screens.reduce((s, r) => s + r.resolutionX, 0);
+  const combinedResolutionY = screens.reduce((m, r) => Math.max(m, r.resolutionY), 0);
+
+  const warnings: string[] = [];
+  screens.forEach((r) => {
+    r.warnings.forEach((w) => warnings.push(`[${r.name}] ${w}`));
+  });
+
+  return {
+    screens,
+    screenCount: screens.length,
+    totalCabinets,
+    totalPixels,
+    totalPowerKw,
+    totalWeightKg,
+    totalPorts,
+    totalLegs,
+    combinedWidthM,
+    combinedHeightM,
+    combinedResolutionX,
+    combinedResolutionY,
+    warnings,
+    pixelPitch: preset.pixelPitch,
+    moduleName: preset.name
   };
 }
 

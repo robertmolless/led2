@@ -61,11 +61,6 @@ body {
   z-index: 10;
   flex-shrink: 0;
 }
-.header-title {
-  font-weight: 700;
-  font-size: 15px;
-  white-space: nowrap;
-}
 .header-toolbar {
   display: flex;
   align-items: center;
@@ -196,13 +191,39 @@ body {
   align-items: center;
   gap: 10px;
   min-height: 44px;
+  cursor: pointer;
 }
-.field-checkbox input {
-  width: 22px;
-  height: 22px;
+/* Кастомный чекбокс: нативный appearance снят глобально (для единообразия полей),
+   поэтому рисуем рамку и белую галочку при :checked сами. */
+.field-checkbox input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 24px;
+  height: 24px;
+  min-height: 0;        /* перебиваем min-height:44px от .field input */
+  padding: 0;           /* перебиваем padding от .field input */
   margin: 0;
   flex-shrink: 0;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  cursor: pointer;
+  transition: background-color 0.12s, border-color 0.12s;
 }
+.field-checkbox input[type="checkbox"]:checked {
+  background-color: var(--primary);
+  border-color: var(--primary);
+  /* Белая галочка. */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='%23ffffff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round' d='M5 12.5l4.5 4.5L19 7'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 16px 16px;
+}
+.field-checkbox input[type="checkbox"]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.25);
+}
+.field-checkbox span { cursor: pointer; }
 
 .preset-info {
   margin-top: 16px;
@@ -210,6 +231,66 @@ body {
   background: var(--surface-muted);
   border: 1px solid var(--border);
   border-radius: 8px;
+}
+
+/* ===== Screen cards editor ===== */
+.screens-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 20px 0 10px;
+}
+.screen-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.screen-card {
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--surface-muted);
+}
+.screen-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.screen-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  font-size: 15px !important;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 8px 10px;
+  min-height: 40px;
+  color: var(--text);
+}
+.screen-card-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.screen-card-actions .btn {
+  min-width: 34px;
+  min-height: 34px;
+  padding: 4px 8px;
+  justify-content: center;
+}
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.add-screen-btn {
+  margin-top: 12px;
+  width: 100%;
+  justify-content: center;
+  min-height: 44px;
 }
 .preset-info h3 {
   font-size: 12px;
@@ -421,7 +502,6 @@ body {
   }
   .sidebar { display: none; }
   .mobile-only { display: inline-flex; }
-  .header-title { font-size: 14px; }
   /* Кнопки в тулбаре — комфортный тап. */
   .btn {
     padding: 8px 12px;
@@ -447,12 +527,6 @@ body {
 }
 
 @media (max-width: 480px) {
-  .header-title {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: 92px;
-  }
   .app-header { gap: 8px; padding-left: 8px; padding-right: 8px; }
   .header-toolbar { gap: 4px; }
   /* На совсем узких экранах текстовые кнопки экспорта чуть компактнее, но

@@ -70,8 +70,8 @@ export function ProjectManager({ open, onClose, config, currentId, onLoad, onSav
               <div className="project-info">
                 <div className="project-name">{p.config.projectName || "Без названия"}</div>
                 <div className="project-meta">
-                  {p.config.screenWidthMeters}×{p.config.screenHeightMeters} м · {" "}
-                  {p.config.screenCount} экр. · {new Date(p.updatedAt).toLocaleString("ru-RU")}
+                  {(p.config.screens?.length ?? 0)} экр. · {" "}
+                  {new Date(p.updatedAt).toLocaleString("ru-RU")}
                 </div>
               </div>
               <div className="project-actions">

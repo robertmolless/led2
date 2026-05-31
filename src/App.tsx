@@ -13,18 +13,62 @@ import { exportPng } from "./utils/exportPng";
 import { exportJpeg } from "./utils/exportJpeg";
 import { setCurrentId, getCurrentId, getProjectById } from "./utils/storage";
 import { canonicalPresetId } from "./data/cabinetPresets";
+import { makeDefaultScreen } from "./utils/defaults";
+import type { ScreenConfig } from "./types";
 
 /**
- * Нормализует загруженную конфигурацию: маппит устаревшие id пресетов на
- * актуальные, чтобы старые сохранённые проекты корректно открывались после
- * переименования модулей.
+ * Нормализует загруженную конфигурацию:
+ *  - маппит устаревшие id пресетов;
+ *  - мигрирует СТАРЫЙ формат (один экран + screenCount) в массив screens.
  */
-function normalizeConfig(c: ProjectConfig): ProjectConfig {
-  const canonical = canonicalPresetId(c.cabinetPresetId);
-  if (canonical !== c.cabinetPresetId) {
-    return { ...c, cabinetPresetId: canonical };
+function normalizeConfig(raw: any): ProjectConfig {
+  const cabinetPresetId = canonicalPresetId(raw?.cabinetPresetId ?? "p26-0.5x0.5");
+
+  if (Array.isArray(raw?.screens) && raw.screens.length > 0) {
+    const screens: ScreenConfig[] = raw.screens.map((s: any, i: number) =>
+      makeDefaultScreen({ ...s, name: s?.name ?? `Экран ${i + 1}` })
+    );
+    return {
+      projectName: raw.projectName ?? "Проект",
+      cabinetPresetId,
+      viewMode: raw.viewMode ?? "front",
+      powerRoutingMode: raw.powerRoutingMode ?? "same_as_signal",
+      backupEnabled: raw.backupEnabled ?? true,
+      showCabinetNumbers: raw.showCabinetNumbers ?? true,
+      showPortNumbers: raw.showPortNumbers ?? true,
+      showLegend: raw.showLegend ?? true,
+      screens
+    };
   }
-  return c;
+
+  // Старый формат — один экран × screenCount.
+  const count = Math.max(1, Math.floor(raw?.screenCount ?? 1));
+  const w = raw?.screenWidthMeters ?? 7;
+  const h = raw?.screenHeightMeters ?? 3;
+  const screens: ScreenConfig[] = Array.from({ length: count }, (_, i) =>
+    makeDefaultScreen({
+      name: count === 1 ? "Экран 1" : `Экран ${i + 1}`,
+      widthMeters: w,
+      heightMeters: h,
+      orientation: raw?.orientation ?? "horizontal",
+      signalRoutingMode: raw?.signalRoutingMode ?? "snake_rows",
+      signalInputSide: raw?.signalInputSide ?? "left",
+      backupSide: raw?.backupSide ?? "opposite",
+      legsMode: raw?.legsMode ?? "auto",
+      manualLegs: raw?.manualLegs ?? 6
+    })
+  );
+  return {
+    projectName: raw?.projectName ?? "Проект",
+    cabinetPresetId,
+    viewMode: raw?.viewMode ?? "front",
+    powerRoutingMode: raw?.powerRoutingMode ?? "same_as_signal",
+    backupEnabled: raw?.backupEnabled ?? true,
+    showCabinetNumbers: raw?.showCabinetNumbers ?? true,
+    showPortNumbers: raw?.showPortNumbers ?? true,
+    showLegend: raw?.showLegend ?? true,
+    screens
+  };
 }
 
 export function App() {
@@ -121,7 +165,6 @@ export function App() {
   return (
     <>
       <AppShell
-        title="LED Scheme Builder"
         toolbar={toolbar}
         inputs={<InputPanel config={config} onChange={setConfig} />}
         results={<ResultsPanel config={config} result={result} />}

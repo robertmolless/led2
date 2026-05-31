@@ -37,24 +37,37 @@ export type LegsMode = "auto" | "manual";
 
 export type ViewMode = "front" | "back";
 
-export interface ProjectConfig {
-  projectName: string;
-  screenWidthMeters: number;
-  screenHeightMeters: number;
-  screenCount: number;
-  cabinetPresetId: string;
+/**
+ * Конфигурация ОДНОГО экрана. В проекте их может быть несколько и все они
+ * независимы: каждый со своими размерами, разводкой сигнала и стойками.
+ */
+export interface ScreenConfig {
+  id: string;
+  name: string;                 // "Левый", "Центр", "L", "C", "R" и т.п.
+  widthMeters: number;
+  heightMeters: number;
   orientation: Orientation;
   signalRoutingMode: SignalRoutingMode;
-  powerRoutingMode: PowerRoutingMode;
-  backupEnabled: boolean;
   signalInputSide: SideName;
   backupSide: BackupSide;
   legsMode: LegsMode;
   manualLegs: number;
-  viewMode: ViewMode;
+}
+
+/**
+ * Конфигурация проекта. Глобальные параметры (модуль, вид, отображение)
+ * общие для всех экранов; геометрия и разводка — в массиве screens.
+ */
+export interface ProjectConfig {
+  projectName: string;
+  cabinetPresetId: string;      // общий модуль для всех экранов
+  viewMode: ViewMode;           // общий вид (для сцены — «из зала» = front)
+  powerRoutingMode: PowerRoutingMode;
+  backupEnabled: boolean;
   showCabinetNumbers: boolean;
   showPortNumbers: boolean;
   showLegend: boolean;
+  screens: ScreenConfig[];
 }
 
 export interface CabinetCell {
@@ -80,8 +93,16 @@ export interface PortGroup {
   isOverLimit: boolean;
 }
 
-export interface CalculatedResult {
-  // Геометрия
+/**
+ * Результат расчёта ОДНОГО экрана.
+ */
+export interface ScreenResult {
+  id: string;
+  name: string;
+  signalInputSide: SideName;
+  requestedWidthM: number;
+  requestedHeightM: number;
+
   cabinetWidthM: number;
   cabinetHeightM: number;
   cabinetPixelW: number;
@@ -89,35 +110,56 @@ export interface CalculatedResult {
 
   cabinetCountX: number;
   cabinetCountY: number;
-  totalCabinetsOneScreen: number;
-  totalCabinetsAllScreens: number;
+  totalCabinets: number;
 
   resolutionX: number;
   resolutionY: number;
   pixelsPerCabinet: number;
-  totalPixelsOneScreen: number;
-  totalPixelsAllScreens: number;
+  totalPixels: number;
 
-  // Порты
+  // фактические размеры (целое число модулей)
+  actualWidthM: number;
+  actualHeightM: number;
+
   maxCabinetsPerPort: number;
-  portsNeededOneScreen: number;
-  portsNeededAllScreens: number;
+  portsNeeded: number;
   averagePortLoadPercent: number;
   maxPortLoadPercent: number;
 
-  // Мощность и вес
-  totalPowerWattsOneScreen: number;
-  totalPowerKwOneScreen: number;
-  totalPowerWattsAllScreens: number;
-  totalPowerKwAllScreens: number;
-  totalWeightKgOneScreen: number;
-  totalWeightKgAllScreens: number;
+  totalPowerWatts: number;
+  totalPowerKw: number;
+  totalWeightKg: number;
 
   legsCount: number;
 
   warnings: string[];
   ports: PortGroup[];
   cabinets: CabinetCell[];
+}
+
+/**
+ * Результат расчёта всего проекта: по каждому экрану + суммарные показатели.
+ */
+export interface ProjectResult {
+  screens: ScreenResult[];
+
+  screenCount: number;
+  totalCabinets: number;
+  totalPixels: number;
+  totalPowerKw: number;
+  totalWeightKg: number;
+  totalPorts: number;
+  totalLegs: number;
+
+  // Габариты «ALL»: экраны стоят в ряд → ширина суммируется, высота берётся макс.
+  combinedWidthM: number;
+  combinedHeightM: number;
+  combinedResolutionX: number;
+  combinedResolutionY: number;
+
+  warnings: string[]; // агрегированные, с префиксом имени экрана
+  pixelPitch: string;
+  moduleName: string;
 }
 
 export interface SavedProject {

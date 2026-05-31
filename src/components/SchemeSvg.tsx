@@ -1,10 +1,10 @@
 import { useEffect, useMemo } from "react";
-import type { CalculatedResult, ProjectConfig } from "../types";
+import type { ProjectResult, ProjectConfig } from "../types";
 import { buildSchemeSvg } from "../utils/svgBuilder";
 
 interface Props {
   config: ProjectConfig;
-  result: CalculatedResult;
+  result: ProjectResult;
   /** Колбэк для передачи готового SVG родителю (для экспорта). */
   onSvgReady?: (svg: string) => void;
 }

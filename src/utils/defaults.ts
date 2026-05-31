@@ -1,27 +1,54 @@
-import type { ProjectConfig } from "../types";
+import type { ProjectConfig, ScreenConfig } from "../types";
 import { DEFAULT_PRESET_ID } from "../data/cabinetPresets";
 
-export function makeDefaultConfig(): ProjectConfig {
+let seq = 0;
+function uid(prefix: string): string {
+  seq += 1;
+  return `${prefix}-${Date.now().toString(36)}-${seq}`;
+}
+
+/** Создаёт экран с разумными значениями по умолчанию. */
+export function makeDefaultScreen(partial?: Partial<ScreenConfig>): ScreenConfig {
   return {
-    projectName: "Новый экран",
-    screenWidthMeters: 12,
-    screenHeightMeters: 5,
-    screenCount: 1,
-    cabinetPresetId: DEFAULT_PRESET_ID,
+    id: uid("scr"),
+    name: "Экран 1",
+    widthMeters: 7,
+    heightMeters: 3,
     orientation: "horizontal",
-    // snake_rows даёт минимально возможное число портов (ceil(total/maxPerPort)),
-    // как требует ТЗ. horizontal_rows визуально красивее (как на референсах),
-    // но при широкой строке = 2 порта на ряд = большее общее число.
     signalRoutingMode: "snake_rows",
-    powerRoutingMode: "same_as_signal",
-    backupEnabled: true,
     signalInputSide: "left",
     backupSide: "opposite",
     legsMode: "auto",
     manualLegs: 6,
-    viewMode: "back",
-    showCabinetNumbers: false,
+    ...partial
+  };
+}
+
+export function makeDefaultConfig(): ProjectConfig {
+  return {
+    projectName: "Новый проект",
+    cabinetPresetId: DEFAULT_PRESET_ID,
+    // Для сценических сборок схему смотрят «из зала» — вид спереди.
+    viewMode: "front",
+    powerRoutingMode: "same_as_signal",
+    backupEnabled: true,
+    showCabinetNumbers: true,
     showPortNumbers: true,
-    showLegend: true
+    showLegend: true,
+    screens: [makeDefaultScreen({ name: "Центр" })]
+  };
+}
+
+/** Быстрый пресет: три экрана (Левый / Центр / Правый) — типовая сцена. */
+export function makeStageLCRConfig(): ProjectConfig {
+  const base = makeDefaultConfig();
+  return {
+    ...base,
+    projectName: "Сцена L/C/R",
+    screens: [
+      makeDefaultScreen({ name: "Левый", widthMeters: 3, heightMeters: 2.5, signalInputSide: "left" }),
+      makeDefaultScreen({ name: "Центр", widthMeters: 5, heightMeters: 3, signalInputSide: "left" }),
+      makeDefaultScreen({ name: "Правый", widthMeters: 3, heightMeters: 2.5, signalInputSide: "right" })
+    ]
   };
 }

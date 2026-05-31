@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 
 interface Props {
-  title: string;
   toolbar: ReactNode;
   inputs: ReactNode;
   results: ReactNode;
@@ -9,11 +8,10 @@ interface Props {
   warnings: ReactNode;
 }
 
-export function AppShell({ title, toolbar, inputs, results, scheme, warnings }: Props) {
+export function AppShell({ toolbar, inputs, results, scheme, warnings }: Props) {
   return (
     <div className="app">
       <header className="app-header">
-        <div className="header-title">{title}</div>
         <div className="header-toolbar">{toolbar}</div>
       </header>
       <main className="app-main">
