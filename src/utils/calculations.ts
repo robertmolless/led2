@@ -21,9 +21,19 @@ function fmtNum(n: number): string {
   return String(parseFloat(n.toFixed(3)));
 }
 
-function calcLegs(screenWidthM: number, manual: number, mode: "auto" | "manual"): number {
-  if (mode === "manual") return Math.max(0, Math.floor(manual));
-  return Math.max(2, Math.ceil(screenWidthM));
+/** Ноги: всегда 1 шт на 1 метр ширины экрана, ставятся внутри. Минимум 1. */
+function calcLegs(screenWidthM: number): number {
+  return Math.max(1, Math.round(screenWidthM));
+}
+
+/** Соотношение сторон в виде упрощённой дроби, напр. 7:3 или 16:9. */
+export function aspectRatio(w: number, h: number): string {
+  const a = Math.round(w);
+  const b = Math.round(h);
+  if (a <= 0 || b <= 0) return "—";
+  const gcd = (x: number, y: number): number => (y === 0 ? x : gcd(y, x % y));
+  const g = gcd(a, b) || 1;
+  return `${a / g}:${b / g}`;
 }
 
 /**
@@ -154,7 +164,7 @@ export function calculateScreen(
 
   const totalPowerWatts = cabinets.reduce((s, c) => s + c.powerWatts, 0);
   const totalWeightKg = cabinets.reduce((s, c) => s + c.weightKg, 0);
-  const legsCount = calcLegs(screenW, screen.manualLegs, screen.legsMode);
+  const legsCount = calcLegs(screenW);
 
   // Фактическая высота — сумма высот рядов.
   const actualHeightM = rows.reduce((s, r) => s + r.heightM, 0);

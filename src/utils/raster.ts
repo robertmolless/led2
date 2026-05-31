@@ -6,7 +6,7 @@
 interface RasterOpts {
   svg: string;
   fileBaseName: string;
-  format: "png" | "jpeg";
+  format: "png" | "jpeg" | "webp";
   /** Множитель разрешения относительно исходного SVG (PNG/JPEG). */
   scale?: number;
   /** Качество JPEG, 0..1. */
@@ -25,7 +25,8 @@ export async function rasterizeAndDownload(opts: RasterOpts): Promise<void> {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `${sanitize(fileBaseName)}.${format === "jpeg" ? "jpg" : "png"}`;
+  const ext = format === "jpeg" ? "jpg" : format === "webp" ? "webp" : "png";
+  a.download = `${sanitize(fileBaseName)}.${ext}`;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -34,7 +35,7 @@ export async function rasterizeAndDownload(opts: RasterOpts): Promise<void> {
 
 export async function rasterizeSvg(
   svg: string,
-  format: "png" | "jpeg",
+  format: "png" | "jpeg" | "webp",
   o: { scale: number; quality: number; background: string }
 ): Promise<Blob> {
   // Извлекаем width/height из тега svg. preserveAspectRatio оставляем.
@@ -66,7 +67,7 @@ export async function rasterizeSvg(
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-  const mime = format === "jpeg" ? "image/jpeg" : "image/png";
+  const mime = format === "jpeg" ? "image/jpeg" : format === "webp" ? "image/webp" : "image/png";
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(
       (blob) => {

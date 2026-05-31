@@ -18,8 +18,9 @@ import type {
   PatchPlan,
   ScreenPatch
 } from "../types";
-import { formatKw, formatKg } from "./calculations";
+import { formatKw, formatKg, aspectRatio } from "./calculations";
 import { formatPorts } from "./processor";
+import { LOGO_WEBP_DATA_URI, LOGO_ASPECT } from "../data/logo";
 
 const C = {
   bg: "#ffffff",
@@ -70,7 +71,13 @@ export function buildSchemeSvg({ config, result, recommendation, patchPlan }: Bu
   const maxGridH = renderable.reduce((m, r) => Math.max(m, r.actualHeightM * scale), 0);
 
   const headerLines = buildAllLines(config, result, recommendation, patchPlan);
-  const headerH = Math.max(headerLines.length * 20 + 24, config.showLegend ? 150 : 0);
+
+  // Высоты зон шапки: текст + (опц.) легенда стопкой, плюс лого справа сверху.
+  const headerTextH = 12 + 24 + Math.max(0, headerLines.length - 1) * 20;
+  const legendH = config.showLegend ? 5 * 24 + 14 : 0;
+  const LOGO_H = 58;
+  const logoChipH = LOGO_H + 24;
+  const headerH = Math.max(headerTextH + legendH, logoChipH);
 
   // Высота зоны подписи зависит от самой длинной подписи (патч добавляет строк).
   const captionLineCounts = renderable.map(
@@ -112,11 +119,15 @@ export function buildSchemeSvg({ config, result, recommendation, patchPlan }: Bu
 
   drawHeader(parts, headerLines, PADDING, PADDING);
   if (config.showLegend) {
-    drawLegend(parts, PADDING, PADDING + headerLines.length * 20 + 16);
+    // Легенда — стопкой ПОД текстом шапки (а не поверх сетки).
+    drawLegend(parts, PADDING, PADDING + headerTextH + 8);
   }
 
-  const svgW = Math.max(maxRight, PADDING + 420) + PADDING;
+  const svgW = Math.max(maxRight, PADDING + 460) + PADDING;
   const svgH = captionBottom + PADDING;
+
+  // Логотип — справа сверху, на тёмной плашке (белый «BESTAGE» читается).
+  drawLogo(parts, svgW - PADDING, PADDING, LOGO_H);
 
   const bg = `<rect x="0" y="0" width="${svgW}" height="${svgH}" fill="${C.bg}"/>`;
   const body = parts.join("\n").replace("__BG__", bg);
@@ -124,6 +135,22 @@ export function buildSchemeSvg({ config, result, recommendation, patchPlan }: Bu
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgW} ${svgH}" width="${svgW}" height="${svgH}" preserveAspectRatio="xMidYMid meet">
     ${body}
   </svg>`;
+}
+
+/** Логотип BESTAGE на тёмной скруглённой плашке. Правый верхний угол. */
+function drawLogo(parts: string[], rightX: number, topY: number, logoH: number) {
+  const pad = 12;
+  const logoW = logoH * LOGO_ASPECT;
+  const chipW = logoW + pad * 2;
+  const chipH = logoH + pad * 2;
+  const chipX = rightX - chipW;
+  const chipY = topY;
+  parts.push(
+    `<rect x="${round(chipX)}" y="${round(chipY)}" width="${round(chipW)}" height="${round(chipH)}" rx="12" ry="12" fill="#0f172a"/>`
+  );
+  parts.push(
+    `<image x="${round(chipX + pad)}" y="${round(chipY + pad)}" width="${round(logoW)}" height="${round(logoH)}" href="${LOGO_WEBP_DATA_URI}" preserveAspectRatio="xMidYMid meet"/>`
+  );
 }
 
 // ===========================================================================
@@ -210,10 +237,10 @@ function drawScreen(
     drawPort(parts, port, config, L);
   });
 
-  // Стойки.
+  // Стойки: по 1 на метр, ставятся ВНУТРИ — по центру каждого метрового сегмента.
   if (screen.legsCount > 0) {
     for (let i = 0; i < screen.legsCount; i++) {
-      const t = screen.legsCount === 1 ? 0.5 : i / (screen.legsCount - 1);
+      const t = (i + 0.5) / screen.legsCount;
       const lx = L.gridLeft + t * gridW;
       const size = LEG_R * 1.8;
       parts.push(
@@ -249,10 +276,10 @@ function drawPort(parts: string[], port: PortGroup, config: ProjectConfig, L: Sc
   const isHorizontal = first.row === last.row;
   const stroke = 3;
 
-  // Смещение сигнала/питания перпендикулярно линии, чтобы не сливались.
+  // Смещение сигнала/питания перпендикулярно линии, чтобы они НЕ сливались.
   const rects = cells.map((c) => cellRect(c, L));
   const cellMin = Math.min(rects[0].w, rects[0].h);
-  const off = Math.min(cellMin * 0.16, 11);
+  const off = clamp(cellMin * 0.28, 8, 20);
 
   const sigPts = rects.map((r) =>
     isHorizontal ? { x: r.cx, y: r.cy - off } : { x: r.cx - off, y: r.cy }
@@ -262,11 +289,13 @@ function drawPort(parts: string[], port: PortGroup, config: ProjectConfig, L: Sc
   );
 
   const sigColor = port.isOverLimit ? C.warn : C.signal;
+  // Сигнал — сплошная синяя линия.
   parts.push(
     `<polyline points="${sigPts.map((p) => `${round(p.x)},${round(p.y)}`).join(" ")}" fill="none" stroke="${sigColor}" stroke-width="${stroke}" stroke-linecap="round" stroke-linejoin="round"/>`
   );
+  // Питание — оранжевая ПУНКТИРНАЯ линия (отличается даже в ч/б печати).
   parts.push(
-    `<polyline points="${pwrPts.map((p) => `${round(p.x)},${round(p.y)}`).join(" ")}" fill="none" stroke="${C.power}" stroke-width="${stroke}" stroke-linecap="round" stroke-linejoin="round"/>`
+    `<polyline points="${pwrPts.map((p) => `${round(p.x)},${round(p.y)}`).join(" ")}" fill="none" stroke="${C.power}" stroke-width="${stroke}" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 5"/>`
   );
 
   // U/B — ВНУТРИ модулей (в первой/последней ячейке порта).
@@ -321,8 +350,8 @@ function drawLegend(parts: string[], x: number, y: number) {
   let yy = y;
   const row = (draw: () => void) => { draw(); yy += 24; };
   row(() => {
-    parts.push(`<line x1="${x}" y1="${yy}" x2="${x + 36}" y2="${yy}" stroke="${C.power}" stroke-width="4"/>`);
-    parts.push(`<text x="${x + 46}" y="${yy}" dominant-baseline="central">Питание</text>`);
+    parts.push(`<line x1="${x}" y1="${yy}" x2="${x + 36}" y2="${yy}" stroke="${C.power}" stroke-width="4" stroke-dasharray="8 5"/>`);
+    parts.push(`<text x="${x + 46}" y="${yy}" dominant-baseline="central">Питание (пунктир)</text>`);
   });
   row(() => {
     parts.push(`<line x1="${x}" y1="${yy}" x2="${x + 36}" y2="${yy}" stroke="${C.signal}" stroke-width="4"/>`);
@@ -352,7 +381,7 @@ function buildAllLines(
   const lines: string[] = [];
   lines.push(`${config.projectName || "Проект"} — ${r.pixelPitch}`);
   lines.push(
-    `ALL: ${stripZero(r.combinedWidthM)}×${stripZero(r.combinedHeightM)} м (${r.combinedResolutionX}×${r.combinedResolutionY})`
+    `ALL: ${stripZero(r.combinedWidthM)}×${stripZero(r.combinedHeightM)} м (${r.combinedResolutionX}×${r.combinedResolutionY}) · ${aspectRatio(r.combinedResolutionX, r.combinedResolutionY)}`
   );
   lines.push(`Экранов: ${r.screenCount} · Модулей: ${r.totalCabinets}`);
   lines.push(`Энергопотребление: ${formatKw(r.totalPowerKw)} · Вес: ${formatKg(r.totalWeightKg)}`);
@@ -402,7 +431,7 @@ function buildScreenCaption(
 
   // Физические параметры.
   lines.push({ text: `Модули ${s.cabinetCountX}×${s.cabinetCountY} = ${s.totalCabinets}`, bold: !patch });
-  lines.push({ text: `Разрешение ${s.resolutionX}×${s.resolutionY}` });
+  lines.push({ text: `Разрешение ${s.resolutionX}×${s.resolutionY} · ${aspectRatio(s.resolutionX, s.resolutionY)}` });
   lines.push({ text: `Порты (сигнал): ${s.portsNeeded}` });
   lines.push({ text: `${formatKw(s.totalPowerKw)} · ${formatKg(s.totalWeightKg)} · ноги ${s.legsCount}` });
   return lines;

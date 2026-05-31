@@ -689,3 +689,13 @@ body {
 .patch-up { color: #16a34a; font-weight: 600; }
 .patch-bk { color: #b45309; font-weight: 600; }
 .patch-mode { color: var(--text-muted); font-size: 11.5px; }
+
+.field-note {
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--surface-muted);
+  border: 1px dashed var(--border-strong);
+  border-radius: 8px;
+  padding: 8px 10px;
+  line-height: 1.4;
+}

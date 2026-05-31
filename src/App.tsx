@@ -11,6 +11,7 @@ import { ProjectManager } from "./components/ProjectManager";
 import { exportPdf } from "./utils/exportPdf";
 import { exportPng } from "./utils/exportPng";
 import { exportJpeg } from "./utils/exportJpeg";
+import { exportWebp } from "./utils/exportWebp";
 import { setCurrentId, getCurrentId, getProjectById } from "./utils/storage";
 import { canonicalPresetId } from "./data/cabinetPresets";
 import { resolveProcessor, buildPatchPlan } from "./utils/processor";
@@ -152,6 +153,7 @@ export function App() {
   const handleExportPdf = () => withBusy("PDF…", async () => exportPdf(await getSvg(), config.projectName));
   const handleExportPng = () => withBusy("PNG…", async () => exportPng(await getSvg(), config.projectName));
   const handleExportJpeg = () => withBusy("JPEG…", async () => exportJpeg(await getSvg(), config.projectName));
+  const handleExportWebp = () => withBusy("WebP…", async () => exportWebp(await getSvg(), config.projectName));
 
   const toolbar = (
     <>
@@ -172,12 +174,14 @@ export function App() {
             if (f === "pdf") handleExportPdf();
             else if (f === "png") handleExportPng();
             else if (f === "jpeg") handleExportJpeg();
+            else if (f === "webp") handleExportWebp();
           }}
         >
           <option value="" disabled hidden>Экспорт</option>
           <option value="pdf">PDF</option>
           <option value="png">PNG</option>
           <option value="jpeg">JPEG</option>
+          <option value="webp">WebP (лёгкий)</option>
         </select>
       )}
       <button className="btn ghost mobile-only" onClick={() => setSidebarOpen("results")}>Σ</button>
