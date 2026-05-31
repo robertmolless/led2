@@ -13,7 +13,7 @@
  * проставляется при регистрации, поэтому в публикации на GitHub Pages всё работает.
  */
 
-const VERSION = "v6";
+const VERSION = "v7";
 const CACHE_STATIC = `led-builder-static-${VERSION}`;
 const CACHE_RUNTIME = `led-builder-runtime-${VERSION}`;
 

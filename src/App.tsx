@@ -149,15 +149,27 @@ export function App() {
       <button className="btn" onClick={handleNew}>Новый</button>
       <button className="btn primary" onClick={() => setPmOpen(true)}>Проекты</button>
       <div className="toolbar-spacer" />
-      <button className="btn" disabled={!!busy} onClick={handleExportPdf}>
-        {busy === "PDF…" ? "..." : "PDF"}
-      </button>
-      <button className="btn" disabled={!!busy} onClick={handleExportPng}>
-        {busy === "PNG…" ? "..." : "PNG"}
-      </button>
-      <button className="btn" disabled={!!busy} onClick={handleExportJpeg}>
-        {busy === "JPEG…" ? "..." : "JPEG"}
-      </button>
+      {busy ? (
+        <button className="btn primary" disabled>{busy}</button>
+      ) : (
+        <select
+          className="export-select"
+          defaultValue=""
+          aria-label="Экспорт"
+          onChange={(e) => {
+            const f = e.target.value;
+            e.target.value = "";
+            if (f === "pdf") handleExportPdf();
+            else if (f === "png") handleExportPng();
+            else if (f === "jpeg") handleExportJpeg();
+          }}
+        >
+          <option value="" disabled hidden>Экспорт</option>
+          <option value="pdf">PDF</option>
+          <option value="png">PNG</option>
+          <option value="jpeg">JPEG</option>
+        </select>
+      )}
       <button className="btn ghost mobile-only" onClick={() => setSidebarOpen("results")}>Σ</button>
     </>
   );

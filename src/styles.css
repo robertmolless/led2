@@ -121,6 +121,29 @@ body {
 .btn.ghost { background: transparent; border-color: transparent; }
 .btn.small { padding: 4px 8px; font-size: 12px; }
 
+/* Кнопка-селектор экспорта: выглядит как основная кнопка, нативный список
+   формата (PDF/PNG/JPEG) не обрезается overflow тулбара и удобен на мобильном. */
+.export-select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: var(--primary);
+  color: #fff;
+  border: 1px solid var(--primary);
+  border-radius: 8px;
+  padding: 6px 30px 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%23ffffff' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+.export-select:hover { background-color: var(--primary-dark); border-color: var(--primary-dark); }
+.export-select:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(37,99,235,0.3); }
+.export-select option { color: var(--text); background: var(--surface); }
+
 .btn-close {
   background: transparent;
   border: none;
@@ -168,6 +191,8 @@ body {
   line-height: 1.3;
   font-family: inherit;
   min-height: 44px; /* комфортный тач-таргет */
+  width: 100%;
+  min-width: 0;     /* не распирать сетку/флекс своей минимальной шириной */
 }
 .field select {
   /* Стрелка для select, раз убрали нативный appearance. */
@@ -283,9 +308,12 @@ body {
 }
 .two-col {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 10px;
 }
+/* Поля внутри сетки не должны распирать колонки своей минимальной шириной. */
+.two-col .field { min-width: 0; }
+.two-col .field input { width: 100%; min-width: 0; }
 .add-screen-btn {
   margin-top: 12px;
   width: 100%;
@@ -515,6 +543,7 @@ body {
     justify-content: center;
     font-size: 18px;
   }
+  .export-select { min-height: 40px; padding-top: 8px; padding-bottom: 8px; }
   .center {
     padding: 8px;
     /* Нижний home-индикатор не должен перекрывать схему. */
