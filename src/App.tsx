@@ -8,6 +8,7 @@ import { ResultsPanel } from "./components/ResultsPanel";
 import { Warnings } from "./components/Warnings";
 import { SchemeSvg } from "./components/SchemeSvg";
 import { ProjectManager } from "./components/ProjectManager";
+import { TestPatternModal } from "./components/TestPatternModal";
 import { exportPdf } from "./utils/exportPdf";
 import { exportPng } from "./utils/exportPng";
 import { exportJpeg } from "./utils/exportJpeg";
@@ -95,6 +96,7 @@ export function App() {
 
   const [currentId, setCurId] = useState<string | null>(() => getCurrentId());
   const [pmOpen, setPmOpen] = useState(false);
+  const [tpOpen, setTpOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState<"none" | "inputs" | "results">("none");
 
@@ -160,6 +162,9 @@ export function App() {
       <button className="btn ghost mobile-only" onClick={() => setSidebarOpen("inputs")}>⚙</button>
       <button className="btn" onClick={handleNew}>Новый</button>
       <button className="btn primary" onClick={() => setPmOpen(true)}>Проекты</button>
+      <button className="btn" onClick={() => setTpOpen(true)} title="Генератор тест-карт 1:1 для приёмки экрана">
+        Тест-карты
+      </button>
       <div className="toolbar-spacer" />
       {busy ? (
         <button className="btn primary" disabled>{busy}</button>
@@ -229,6 +234,13 @@ export function App() {
         currentId={currentId}
         onLoad={handleLoad}
         onSaved={handleSavedFromManager}
+      />
+
+      <TestPatternModal
+        open={tpOpen}
+        onClose={() => setTpOpen(false)}
+        config={config}
+        result={result}
       />
     </>
   );
