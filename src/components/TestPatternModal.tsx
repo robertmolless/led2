@@ -7,8 +7,9 @@ import {
   type PatternOptions
 } from "../utils/testPatterns";
 import {
-  exportTestPatternPng,
-  renderPreview
+  exportTestPattern,
+  renderPreview,
+  type TestPatternFormat
 } from "../utils/exportTestPattern";
 
 interface Props {
@@ -23,6 +24,7 @@ type ScreenChoice =
   | { kind: "screen"; index: number };
 
 const PATTERNS: PatternId[] = [
+  "installer",
   "pixel_grid",
   "checkerboard",
   "solid",
@@ -51,7 +53,7 @@ export function TestPatternModal({ open, onClose, config, result }: Props) {
   const [choice, setChoice] = useState<ScreenChoice>(
     result.screens.length > 1 ? { kind: "combined" } : { kind: "screen", index: 0 }
   );
-  const [pattern, setPattern] = useState<PatternId>("pixel_grid");
+  const [pattern, setPattern] = useState<PatternId>("installer");
   const [solidColor, setSolidColor] = useState<string>("#ffffff");
   const [checkerSize, setCheckerSize] = useState<number>(32);
   const [gridStep, setGridStep] = useState<number>(8);
@@ -61,7 +63,7 @@ export function TestPatternModal({ open, onClose, config, result }: Props) {
   const [manualW, setManualW] = useState<number>(1920);
   const [manualH, setManualH] = useState<number>(1080);
 
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
   const previewRef = useRef<HTMLCanvasElement | null>(null);
 
   // Эффективные параметры выбранного источника (разрешение, имя, кабинеты).
@@ -132,8 +134,8 @@ export function TestPatternModal({ open, onClose, config, result }: Props) {
 
   if (!open) return null;
 
-  const handleExport = async () => {
-    setBusy(true);
+  const handleExport = async (format: TestPatternFormat) => {
+    setBusy(format.toUpperCase());
     try {
       const baseName = [
         "testpattern",
@@ -143,17 +145,20 @@ export function TestPatternModal({ open, onClose, config, result }: Props) {
       ]
         .filter(Boolean)
         .join("-");
-      await exportTestPatternPng({
-        width: exportW,
-        height: exportH,
-        patternId: pattern,
-        patternOptions,
-        fileBaseName: baseName
-      });
+      await exportTestPattern(
+        {
+          width: exportW,
+          height: exportH,
+          patternId: pattern,
+          patternOptions,
+          fileBaseName: baseName
+        },
+        format
+      );
     } catch (e) {
       alert(e instanceof Error ? e.message : String(e));
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
 
@@ -341,13 +346,28 @@ export function TestPatternModal({ open, onClose, config, result }: Props) {
 
         <div className="modal-actions testpattern-actions">
           <button className="btn" onClick={onClose}>Закрыть</button>
-          <button
-            className="btn primary"
-            onClick={handleExport}
-            disabled={busy}
-          >
-            {busy ? "Создаю PNG…" : `Скачать PNG ${exportW}×${exportH}`}
-          </button>
+          <span className="testpattern-size-hint">
+            Файл будет {exportW}×{exportH} px
+          </span>
+          {busy ? (
+            <button className="btn primary" disabled>{busy}…</button>
+          ) : (
+            <select
+              className="export-select"
+              defaultValue=""
+              aria-label="Экспорт тест-карты"
+              onChange={(e) => {
+                const f = e.target.value as TestPatternFormat | "";
+                e.target.value = "";
+                if (f) handleExport(f);
+              }}
+            >
+              <option value="" disabled hidden>Экспорт</option>
+              <option value="png">PNG (рекомендуется)</option>
+              <option value="jpeg">JPEG</option>
+              <option value="pdf">PDF</option>
+            </select>
+          )}
         </div>
       </div>
     </div>

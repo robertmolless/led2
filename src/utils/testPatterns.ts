@@ -14,7 +14,8 @@
 import type { ScreenResult } from "../types";
 
 export type PatternId =
-  | "pixel_grid"      // тонкая сетка 1px (как Resolume)
+  | "installer"       // универсальная карта в стиле Resolume — всё в одном
+  | "pixel_grid"      // тонкая сетка 1px
   | "checkerboard"   // шахматка с настраиваемой клеткой
   | "solid"           // сплошной цвет
   | "grayscale_ramp" // градиент 0..255 + ступени
@@ -295,6 +296,247 @@ function drawGeometry(ctx: CanvasRenderingContext2D, w: number, h: number) {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+// 6b. INSTALLER — универсальная карта в стиле Resolume.
+//
+// Совмещает в одном кадре:
+//   • фоновую серую шахматку для оценки контраста и стыков;
+//   • вертикальную HSV-радугу слева — для проверки полной цветовой палитры
+//     в одной точке экрана (сатурация, плавность переходов);
+//   • B/W градиент-квадрат справа сверху — для проверки гаммы в тенях и
+//     светах одновременно (видны ли все ступени около чёрного и белого);
+//   • концентрические окружности + сплошные диагонали + пунктирный крест;
+//   • крупный текст «WIDTH × HEIGHT» по центру;
+//   • снизу — frequency response (вертикальные линии разной плотности 1/2/3/4/8
+//     px), индикатор алиасинга и мипмапов;
+//   • ещё ниже — горизонтальная палитра дискретных цветов;
+//   • L-маркеры в углах для проверки cropping.
+
+/**
+ * HSV (h: 0..1, s: 0..1, v: 0..1) → CSS-цвет rgb(r,g,b).
+ * Используется для генерации радуги. Без AA — рисуем полосами.
+ */
+function hsvCss(h: number, s: number, v: number): string {
+  const i = Math.floor(h * 6);
+  const f = h * 6 - i;
+  const p = v * (1 - s);
+  const q = v * (1 - f * s);
+  const t = v * (1 - (1 - f) * s);
+  let r = 0, g = 0, b = 0;
+  switch (i % 6) {
+    case 0: r = v; g = t; b = p; break;
+    case 1: r = q; g = v; b = p; break;
+    case 2: r = p; g = v; b = t; break;
+    case 3: r = p; g = q; b = v; break;
+    case 4: r = t; g = p; b = v; break;
+    case 5: r = v; g = p; b = q; break;
+  }
+  return `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)})`;
+}
+
+/** Пунктирная горизонтальная линия. dash = длина штриха, gap = длина пропуска. */
+function hLineDashed(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number, len: number,
+  dash: number, gap: number, color: string
+) {
+  ctx.fillStyle = color;
+  let i = 0;
+  while (i < len) {
+    ctx.fillRect(x + i, y, Math.min(dash, len - i), 1);
+    i += dash + gap;
+  }
+}
+/** Пунктирная вертикальная линия. */
+function vLineDashed(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number, len: number,
+  dash: number, gap: number, color: string
+) {
+  ctx.fillStyle = color;
+  let i = 0;
+  while (i < len) {
+    ctx.fillRect(x, y + i, 1, Math.min(dash, len - i));
+    i += dash + gap;
+  }
+}
+
+function drawInstaller(ctx: CanvasRenderingContext2D, w: number, h: number, opts: PatternOptions) {
+  // ─── 1. Фон: шахматка 64×64 серых тонов ─────────────────────────────────
+  const tileSize = 64;
+  fill(ctx, w, h, "#606060"); // светло-серый базовый
+  ctx.fillStyle = "#404040";   // тёмные клетки
+  for (let y = 0; y < h; y += tileSize) {
+    for (let x = 0; x < w; x += tileSize) {
+      const odd = ((Math.floor(x / tileSize) + Math.floor(y / tileSize)) & 1) === 1;
+      if (odd) ctx.fillRect(x, y, Math.min(tileSize, w - x), Math.min(tileSize, h - y));
+    }
+  }
+
+  // ─── 2. Вертикальная HSV-радуга слева ───────────────────────────────────
+  // Блок занимает ~9% ширины × 60% высоты, чуть отступая от левого края.
+  const rainbowW = Math.max(48, Math.floor(w * 0.09));
+  const rainbowH = Math.floor(h * 0.6);
+  const rainbowX = Math.floor(w * 0.04);
+  const rainbowY = Math.floor((h - rainbowH) / 2);
+  for (let y = 0; y < rainbowH; y++) {
+    const hue = y / Math.max(1, rainbowH - 1);
+    ctx.fillStyle = hsvCss(hue, 1, 1);
+    ctx.fillRect(rainbowX, rainbowY + y, rainbowW, 1);
+  }
+  // Тонкая чёрная рамка вокруг для чёткости границы.
+  ctx.fillStyle = "#000";
+  ctx.fillRect(rainbowX - 1, rainbowY - 1, rainbowW + 2, 1);
+  ctx.fillRect(rainbowX - 1, rainbowY + rainbowH, rainbowW + 2, 1);
+  ctx.fillRect(rainbowX - 1, rainbowY - 1, 1, rainbowH + 2);
+  ctx.fillRect(rainbowX + rainbowW, rainbowY - 1, 1, rainbowH + 2);
+
+  // ─── 3. B/W градиент-квадрат справа сверху ──────────────────────────────
+  // Размер ~14% от меньшей стороны экрана. Сверху чёрный, снизу белый,
+  // плавный переход — для проверки гаммы в тенях и светах.
+  const gradSize = Math.max(64, Math.floor(Math.min(w, h) * 0.18));
+  const gradX = w - gradSize - Math.floor(w * 0.04);
+  const gradY = Math.floor(h * 0.06);
+  // Рисуем через ImageData — это сильно быстрее, чем fillRect на каждый пиксель.
+  {
+    const img = ctx.createImageData(gradSize, gradSize);
+    for (let y = 0; y < gradSize; y++) {
+      const v = Math.round((y / Math.max(1, gradSize - 1)) * 255);
+      for (let x = 0; x < gradSize; x++) {
+        const i = (y * gradSize + x) * 4;
+        img.data[i] = v; img.data[i + 1] = v; img.data[i + 2] = v; img.data[i + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, gradX, gradY);
+  }
+  // Рамка вокруг для контраста с фоном.
+  ctx.fillStyle = "#ff4040";
+  ctx.fillRect(gradX - 1, gradY - 1, gradSize + 2, 1);
+  ctx.fillRect(gradX - 1, gradY + gradSize, gradSize + 2, 1);
+  ctx.fillRect(gradX - 1, gradY - 1, 1, gradSize + 2);
+  ctx.fillRect(gradX + gradSize, gradY - 1, 1, gradSize + 2);
+
+  // ─── 4. Геометрия: окружности + сплошные диагонали + пунктирный крест ───
+  const cx = Math.floor(w / 2);
+  const cy = Math.floor(h / 2);
+  const r = Math.floor(Math.min(w, h) * 0.42);
+
+  lineBres(ctx, 0, 0, w - 1, h - 1, "#ffffff");
+  lineBres(ctx, w - 1, 0, 0, h - 1, "#ffffff");
+
+  // Крест пунктирный — как в Resolume. Шаг подбираем от резолюции.
+  const dash = Math.max(6, Math.floor(Math.min(w, h) / 80));
+  hLineDashed(ctx, 0, cy, w, dash, dash, "#ffffff");
+  vLineDashed(ctx, cx, 0, h, dash, dash, "#ffffff");
+
+  // Окружности — сплошные.
+  circleBres(ctx, cx, cy, r, "#ffffff");
+  circleBres(ctx, cx, cy, Math.floor(r * 0.5), "#ffffff");
+
+  // ─── 5. Большой текст разрешения по центру ──────────────────────────────
+  const labelFont = Math.max(28, Math.floor(Math.min(w / 24, h / 12)));
+  ctx.fillStyle = "#ffffff";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "alphabetic";
+  ctx.font = `bold ${labelFont}px -apple-system, "Segoe UI", system-ui, Roboto, Arial, sans-serif`;
+  // Текст чуть ниже центра. Координата подобрана так, чтобы не наезжать на
+  // нижнюю полосу frequency response (см. п. 6 — freqBandY = h-0.22h-band).
+  const mainTextY = cy + Math.floor(r * 0.25);
+  ctx.fillText(`${w} × ${h}`, cx, mainTextY);
+
+  // Если есть имя проекта/экрана — подпись поменьше выше центра.
+  const info = opts.info;
+  if (info?.screenName || info?.projectName) {
+    const subFont = Math.max(16, Math.floor(labelFont * 0.6));
+    ctx.font = `${subFont}px -apple-system, "Segoe UI", system-ui, Roboto, Arial, sans-serif`;
+    const lines = [info.projectName, info.screenName].filter(Boolean) as string[];
+    let ty = cy - Math.floor(r * 0.4);
+    for (const ln of lines) {
+      ctx.fillText(ln, cx, ty);
+      ty += subFont + 4;
+    }
+  }
+  if (info?.pitch || info?.moduleName) {
+    const subFont = Math.max(14, Math.floor(labelFont * 0.45));
+    ctx.font = `${subFont}px -apple-system, "Segoe UI", system-ui, Roboto, Arial, sans-serif`;
+    ctx.fillStyle = "#cccccc";
+    const bottom = [info.pitch, info.moduleName].filter(Boolean).join(" · ");
+    ctx.fillText(bottom, cx, mainTextY + subFont + 8);
+    ctx.fillStyle = "#ffffff";
+  }
+
+  // ─── 6. Frequency response: полосы 1/2/3/4/8 px ─────────────────────────
+  // Полоса в нижней четверти, ниже центра. Делит экран на 5 секций по ширине.
+  const freqBandH = Math.max(24, Math.floor(h * 0.06));
+  const freqBandY = h - Math.floor(h * 0.22) - freqBandH;
+  const freqLefts = [1, 2, 3, 4, 8];
+  const sectionW = w / freqLefts.length;
+  for (let s = 0; s < freqLefts.length; s++) {
+    const px2 = freqLefts[s];
+    const xStart = Math.round(s * sectionW);
+    const xEnd = Math.round((s + 1) * sectionW);
+    // Фон секции — чёрный, чтобы линии чётче читались.
+    ctx.fillStyle = "#000";
+    ctx.fillRect(xStart, freqBandY, xEnd - xStart, freqBandH);
+    // Чередующиеся вертикальные полосы по px2.
+    ctx.fillStyle = "#fff";
+    for (let x = xStart; x < xEnd; x += px2 * 2) {
+      ctx.fillRect(x, freqBandY, Math.min(px2, xEnd - x), freqBandH);
+    }
+    // Подпись плотности.
+    ctx.fillStyle = "#ffff00";
+    const lblFont = Math.max(11, Math.floor(freqBandH * 0.42));
+    ctx.font = `bold ${lblFont}px -apple-system, "Segoe UI", system-ui, Roboto, Arial, sans-serif`;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    ctx.fillText(`${px2}px`, xStart + 4, freqBandY + 2);
+  }
+
+  // ─── 7. Палитра дискретных цветов ───────────────────────────────────────
+  // Под frequency response — горизонтальная полоса насыщенных цветов и
+  // ступеней серого. Видно цветовую дискриминацию и calibration ошибки.
+  const paletteY = h - Math.floor(h * 0.12);
+  const paletteH = Math.max(20, Math.floor(h * 0.05));
+  const colors = [
+    "#ff0000", "#ff7f00", "#ffff00", "#7fff00", "#00ff00", "#00ff7f",
+    "#00ffff", "#007fff", "#0000ff", "#7f00ff", "#ff00ff", "#ff007f",
+    "#ffffff", "#cccccc", "#999999", "#666666", "#333333", "#000000"
+  ];
+  const swatchW = w / colors.length;
+  for (let i = 0; i < colors.length; i++) {
+    const x0 = Math.round(i * swatchW);
+    const x1 = Math.round((i + 1) * swatchW);
+    ctx.fillStyle = colors[i];
+    ctx.fillRect(x0, paletteY, x1 - x0, paletteH);
+  }
+  // Тонкая чёрная отбивка сверху и снизу полосы.
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, paletteY - 1, w, 1);
+  ctx.fillRect(0, paletteY + paletteH, w, 1);
+
+  // ─── 8. L-маркеры в углах ────────────────────────────────────────────────
+  const cornerLen = Math.min(80, Math.floor(Math.min(w, h) * 0.06));
+  const corners: [number, number][] = [[0, 0], [w - 1, 0], [0, h - 1], [w - 1, h - 1]];
+  ctx.fillStyle = "#ff4040";
+  for (const [x, y] of corners) {
+    const sx = x === 0 ? 1 : -1;
+    const sy = y === 0 ? 1 : -1;
+    for (let i = 0; i < cornerLen; i++) {
+      ctx.fillRect(x + sx * i, y, 1, 1);
+      ctx.fillRect(x, y + sy * i, 1, 1);
+    }
+  }
+
+  // ─── 9. Координаты углов (мелкий текст) ─────────────────────────────────
+  ctx.fillStyle = "#ff4040";
+  const cornerFont = Math.max(10, Math.floor(Math.min(w, h) / 120));
+  ctx.font = `${cornerFont}px -apple-system, "Segoe UI", system-ui, Roboto, Arial, sans-serif`;
+  ctx.textAlign = "left";  ctx.textBaseline = "top";    ctx.fillText("0, 0", cornerLen + 4, 4);
+  ctx.textAlign = "right"; ctx.textBaseline = "top";    ctx.fillText(`${w - 1}, 0`, w - cornerLen - 4, 4);
+  ctx.textAlign = "left";  ctx.textBaseline = "bottom"; ctx.fillText(`0, ${h - 1}`, cornerLen + 4, h - 4);
+  ctx.textAlign = "right"; ctx.textBaseline = "bottom"; ctx.fillText(`${w - 1}, ${h - 1}`, w - cornerLen - 4, h - 4);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // 7. CABINET GRID — границы кабинетов + нумерация.
 
 function drawCabinetGrid(ctx: CanvasRenderingContext2D, w: number, h: number, opts: PatternOptions) {
@@ -427,6 +669,7 @@ export function renderPattern(
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 
   switch (id) {
+    case "installer":      return drawInstaller(ctx, w, h, opts);
     case "pixel_grid":     return drawPixelGrid(ctx, w, h, opts);
     case "checkerboard":   return drawCheckerboard(ctx, w, h, opts);
     case "solid":          return drawSolid(ctx, w, h, opts);
@@ -440,6 +683,7 @@ export function renderPattern(
 
 /** Человекочитаемые названия паттернов (для UI). */
 export const PATTERN_LABELS: Record<PatternId, string> = {
+  installer:      "Универсальная (Resolume-style)",
   pixel_grid:     "Пиксельная сетка",
   checkerboard:   "Шахматка",
   solid:          "Сплошной цвет",
