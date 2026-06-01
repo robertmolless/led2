@@ -67,11 +67,6 @@ function px(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: n
   ctx.fillRect(Math.round(x), Math.round(y), Math.max(1, Math.round(w)), Math.max(1, Math.round(h)));
 }
 
-/** Ограничение значения диапазоном [lo, hi]. */
-function clamp(v: number, lo: number, hi: number): number {
-  return Math.min(hi, Math.max(lo, v));
-}
-
 /** Тонкая 1px линия через fillRect (не stroke — чтобы избежать antialiasing). */
 function hLine(ctx: CanvasRenderingContext2D, x: number, y: number, len: number, color: string) {
   ctx.fillStyle = color;
@@ -80,15 +75,6 @@ function hLine(ctx: CanvasRenderingContext2D, x: number, y: number, len: number,
 function vLine(ctx: CanvasRenderingContext2D, x: number, y: number, len: number, color: string) {
   ctx.fillStyle = color;
   px(ctx, x, y, 1, len);
-}
-
-/** Рамка 1px вокруг прямоугольника (через fillRect, без AA). */
-function strokeRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, color: string) {
-  ctx.fillStyle = color;
-  ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), 1);
-  ctx.fillRect(Math.round(x), Math.round(y + h - 1), Math.round(w), 1);
-  ctx.fillRect(Math.round(x), Math.round(y), 1, Math.round(h));
-  ctx.fillRect(Math.round(x + w - 1), Math.round(y), 1, Math.round(h));
 }
 
 /** Bresenham-подобная линия (целые пиксели), для диагоналей без AA. */
@@ -375,194 +361,160 @@ function vLineDashed(
 }
 
 function drawInstaller(ctx: CanvasRenderingContext2D, w: number, h: number, opts: PatternOptions) {
-  // ─────────────────────────────────────────────────────────────────────────
-  //  ПРИВЯЗКА К СЕТКЕ. Вся карта строится на шахматке с клеткой `cell`.
-  //  Каждый блок занимает ЦЕЛОЕ число клеток и выровнен по сетке; между
-  //  блоками — отступы кратные клетке. Геометрия (диагонали/крест/окружности)
-  //  рисуется ПОД блоками — блоки рисуются поверх непрозрачно, поэтому линии
-  //  «обрываются» на границах блоков, как в Resolume.
-  // ─────────────────────────────────────────────────────────────────────────
-  const cell = clamp(Math.round(Math.min(w, h) / 16), 14, 64);
-  const cols = Math.max(8, Math.floor(w / cell));
-  const rows = Math.max(6, Math.floor(h / cell));
-  const gx = (c: number) => Math.round(c * cell);
-  const gy = (r: number) => Math.round(r * cell);
-
-  // ─── 1. Фон-шахматка (два серых тона) на всю площадь ────────────────────
-  fill(ctx, w, h, "#5a5a5a");
-  ctx.fillStyle = "#3c3c3c";
-  for (let y = 0; y < h; y += cell) {
-    for (let x = 0; x < w; x += cell) {
-      const odd = ((Math.floor(x / cell) + Math.floor(y / cell)) & 1) === 1;
-      if (odd) ctx.fillRect(x, y, Math.min(cell, w - x), Math.min(cell, h - y));
+  // ─── 1. Фон: шахматка 64×64 серых тонов ─────────────────────────────────
+  const tileSize = 64;
+  fill(ctx, w, h, "#606060"); // светло-серый базовый
+  ctx.fillStyle = "#404040";   // тёмные клетки
+  for (let y = 0; y < h; y += tileSize) {
+    for (let x = 0; x < w; x += tileSize) {
+      const odd = ((Math.floor(x / tileSize) + Math.floor(y / tileSize)) & 1) === 1;
+      if (odd) ctx.fillRect(x, y, Math.min(tileSize, w - x), Math.min(tileSize, h - y));
     }
   }
 
-  // ─── 2. Геометрия ПОД блоками: диагонали, пунктирный крест, окружности ───
+  // ─── 2. Вертикальная HSV-радуга слева ───────────────────────────────────
+  // Блок занимает ~9% ширины × 60% высоты, чуть отступая от левого края.
+  const rainbowW = Math.max(48, Math.floor(w * 0.09));
+  const rainbowH = Math.floor(h * 0.6);
+  const rainbowX = Math.floor(w * 0.04);
+  const rainbowY = Math.floor((h - rainbowH) / 2);
+  for (let y = 0; y < rainbowH; y++) {
+    const hue = y / Math.max(1, rainbowH - 1);
+    ctx.fillStyle = hsvCss(hue, 1, 1);
+    ctx.fillRect(rainbowX, rainbowY + y, rainbowW, 1);
+  }
+  // Тонкая чёрная рамка вокруг для чёткости границы.
+  ctx.fillStyle = "#000";
+  ctx.fillRect(rainbowX - 1, rainbowY - 1, rainbowW + 2, 1);
+  ctx.fillRect(rainbowX - 1, rainbowY + rainbowH, rainbowW + 2, 1);
+  ctx.fillRect(rainbowX - 1, rainbowY - 1, 1, rainbowH + 2);
+  ctx.fillRect(rainbowX + rainbowW, rainbowY - 1, 1, rainbowH + 2);
+
+  // ─── 3. B/W градиент-квадрат справа сверху ──────────────────────────────
+  // Размер ~14% от меньшей стороны экрана. Сверху чёрный, снизу белый,
+  // плавный переход — для проверки гаммы в тенях и светах.
+  const gradSize = Math.max(64, Math.floor(Math.min(w, h) * 0.18));
+  const gradX = w - gradSize - Math.floor(w * 0.04);
+  const gradY = Math.floor(h * 0.06);
+  // Рисуем через ImageData — это сильно быстрее, чем fillRect на каждый пиксель.
+  {
+    const img = ctx.createImageData(gradSize, gradSize);
+    for (let y = 0; y < gradSize; y++) {
+      const v = Math.round((y / Math.max(1, gradSize - 1)) * 255);
+      for (let x = 0; x < gradSize; x++) {
+        const i = (y * gradSize + x) * 4;
+        img.data[i] = v; img.data[i + 1] = v; img.data[i + 2] = v; img.data[i + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, gradX, gradY);
+  }
+  // Рамка вокруг для контраста с фоном.
+  ctx.fillStyle = "#ff4040";
+  ctx.fillRect(gradX - 1, gradY - 1, gradSize + 2, 1);
+  ctx.fillRect(gradX - 1, gradY + gradSize, gradSize + 2, 1);
+  ctx.fillRect(gradX - 1, gradY - 1, 1, gradSize + 2);
+  ctx.fillRect(gradX + gradSize, gradY - 1, 1, gradSize + 2);
+
+  // ─── 4. Геометрия: окружности + сплошные диагонали + пунктирный крест ───
   const cx = Math.floor(w / 2);
   const cy = Math.floor(h / 2);
-  const r1 = Math.floor(Math.min(w, h) * 0.44);
-  const r2 = Math.floor(r1 * 0.55);
+  const r = Math.floor(Math.min(w, h) * 0.42);
+
   lineBres(ctx, 0, 0, w - 1, h - 1, "#ffffff");
   lineBres(ctx, w - 1, 0, 0, h - 1, "#ffffff");
-  const dash = Math.max(5, Math.floor(Math.min(w, h) / 90));
+
+  // Крест пунктирный — как в Resolume. Шаг подбираем от резолюции.
+  const dash = Math.max(6, Math.floor(Math.min(w, h) / 80));
   hLineDashed(ctx, 0, cy, w, dash, dash, "#ffffff");
   vLineDashed(ctx, cx, 0, h, dash, dash, "#ffffff");
-  circleBres(ctx, cx, cy, r1, "#ffffff");
-  circleBres(ctx, cx, cy, r2, "#ffffff");
 
-  // ─── Раскладка блоков в КЛЕТКАХ ─────────────────────────────────────────
-  const hsvWc = clamp(Math.round(cols * 0.09), 2, 6);
-  const hsvXc = 1;
-  const hsvTopc = clamp(Math.round(rows * 0.14), 1, rows - 4);
-  const hsvHc = clamp(Math.round(rows * 0.46), 3, rows - hsvTopc - 3);
+  // Окружности — сплошные.
+  circleBres(ctx, cx, cy, r, "#ffffff");
+  circleBres(ctx, cx, cy, Math.floor(r * 0.5), "#ffffff");
 
-  const bwSidec = clamp(Math.round(rows * 0.34), 3, Math.min(cols - 4, rows - 3));
-  const bwXc = cols - bwSidec - 1;
-  const bwYc = 1;
+  // ─── 5. Большой текст разрешения по центру ──────────────────────────────
+  const labelFont = Math.max(28, Math.floor(Math.min(w / 24, h / 12)));
+  ctx.fillStyle = "#ffffff";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "alphabetic";
+  ctx.font = `bold ${labelFont}px -apple-system, "Segoe UI", system-ui, Roboto, Arial, sans-serif`;
+  // Текст чуть ниже центра. Координата подобрана так, чтобы не наезжать на
+  // нижнюю полосу frequency response (см. п. 6 — freqBandY = h-0.22h-band).
+  const mainTextY = cy + Math.floor(r * 0.25);
+  ctx.fillText(`${w} × ${h}`, cx, mainTextY);
 
-  const lblWc = clamp(Math.round(cols * 0.46), 6, cols - 4);
-  const lblHc = clamp(Math.round(rows * 0.26), 3, rows - 4);
-  const lblXc = Math.round((cols - lblWc) / 2);
-  const lblYc = Math.round((rows - lblHc) / 2);
-
-  const zebXc = hsvXc + hsvWc + 1;
-  let zebTopc = Math.max(Math.round(rows * 0.62), lblYc + lblHc + 1);
-  const zebHc = clamp(Math.round(rows * 0.06), 1, 3);
-  const zebWc = cols - 1 - zebXc;
-
-  const palXc = 1;
-  const palWc = cols - 2;
-  let palTopc = Math.max(Math.round(rows * 0.82), zebTopc + zebHc + 1, hsvTopc + hsvHc + 1);
-  const palHc = clamp(Math.round(rows * 0.05), 1, 2);
-  if (palTopc + palHc > rows - 1) palTopc = rows - 1 - palHc;
-  if (zebTopc + zebHc > palTopc - 1) zebTopc = Math.max(lblYc + lblHc + 1, palTopc - zebHc - 1);
-
-  // ─── 3. HSV-радуга ──────────────────────────────────────────────────────
-  {
-    const x = gx(hsvXc), y = gy(hsvTopc), bw = gx(hsvXc + hsvWc) - x, bh = gy(hsvTopc + hsvHc) - y;
-    for (let i = 0; i < bh; i++) {
-      const hue = i / Math.max(1, bh - 1);
-      ctx.fillStyle = hsvCss(hue, 1, 1);
-      ctx.fillRect(x, y + i, bw, 1);
+  // Если есть имя проекта/экрана — подпись поменьше выше центра.
+  const info = opts.info;
+  if (info?.screenName || info?.projectName) {
+    const subFont = Math.max(16, Math.floor(labelFont * 0.6));
+    ctx.font = `${subFont}px -apple-system, "Segoe UI", system-ui, Roboto, Arial, sans-serif`;
+    const lines = [info.projectName, info.screenName].filter(Boolean) as string[];
+    let ty = cy - Math.floor(r * 0.4);
+    for (const ln of lines) {
+      ctx.fillText(ln, cx, ty);
+      ty += subFont + 4;
     }
-    strokeRect(ctx, x, y, bw, bh, "#000000");
   }
-
-  // ─── 4. B/W градиент-квадрат ────────────────────────────────────────────
-  {
-    const x = gx(bwXc), y = gy(bwYc), bw = gx(bwXc + bwSidec) - x, bh = gy(bwYc + bwSidec) - y;
-    const img = ctx.createImageData(bw, bh);
-    for (let yy = 0; yy < bh; yy++) {
-      const v = Math.round((yy / Math.max(1, bh - 1)) * 255);
-      for (let xx = 0; xx < bw; xx++) {
-        const idx = (yy * bw + xx) * 4;
-        img.data[idx] = v; img.data[idx + 1] = v; img.data[idx + 2] = v; img.data[idx + 3] = 255;
-      }
-    }
-    ctx.putImageData(img, x, y);
-    strokeRect(ctx, x, y, bw, bh, "#000000");
-  }
-
-  // ─── 5. Зебра (1/2/3/4/8 px) с подписями на чёрных таблетках ────────────
-  {
-    const x = gx(zebXc), y = gy(zebTopc), bw = gx(zebXc + zebWc) - x, bh = gy(zebTopc + zebHc) - y;
-    const widths = [1, 2, 3, 4, 8];
-    const secW = bw / widths.length;
-    for (let s2 = 0; s2 < widths.length; s2++) {
-      const pxW = widths[s2];
-      const xs = Math.round(x + s2 * secW);
-      const xe = Math.round(x + (s2 + 1) * secW);
-      ctx.fillStyle = "#000000";
-      ctx.fillRect(xs, y, xe - xs, bh);
-      ctx.fillStyle = "#ffffff";
-      for (let xx = xs; xx < xe; xx += pxW * 2) {
-        ctx.fillRect(xx, y, Math.min(pxW, xe - xx), bh);
-      }
-      const lblFont = clamp(Math.round(bh * 0.5), 10, 22);
-      ctx.font = `bold ${lblFont}px -apple-system, "Segoe UI", system-ui, Roboto, Arial, sans-serif`;
-      ctx.textAlign = "left"; ctx.textBaseline = "middle";
-      const txt = `${pxW}px`;
-      const tw = Math.ceil(ctx.measureText(txt).width) + 8;
-      const th = lblFont + 6;
-      ctx.fillStyle = "#000000";
-      ctx.fillRect(xs + 3, y + Math.round((bh - th) / 2), tw, th);
-      ctx.fillStyle = "#ffff00";
-      ctx.fillText(txt, xs + 7, y + Math.round(bh / 2) + 1);
-    }
-    strokeRect(ctx, x, y, bw, bh, "#000000");
-  }
-
-  // ─── 6. Палитра дискретных цветов ───────────────────────────────────────
-  {
-    const x = gx(palXc), y = gy(palTopc), bw = gx(palXc + palWc) - x, bh = gy(palTopc + palHc) - y;
-    const colors = [
-      "#ff0000", "#ff7f00", "#ffff00", "#7fff00", "#00ff00", "#00ff7f",
-      "#00ffff", "#007fff", "#0000ff", "#7f00ff", "#ff00ff", "#ff007f",
-      "#ffffff", "#cccccc", "#999999", "#666666", "#333333", "#000000"
-    ];
-    const sw = bw / colors.length;
-    for (let i = 0; i < colors.length; i++) {
-      const xs = Math.round(x + i * sw);
-      const xe = Math.round(x + (i + 1) * sw);
-      ctx.fillStyle = colors[i];
-      ctx.fillRect(xs, y, xe - xs, bh);
-    }
-    strokeRect(ctx, x, y, bw, bh, "#000000");
-  }
-
-  // ─── 7. Центральная плашка с инфо ───────────────────────────────────────
-  {
-    const x = gx(lblXc), y = gy(lblYc), bw = gx(lblXc + lblWc) - x, bh = gy(lblYc + lblHc) - y;
-    ctx.fillStyle = "rgba(10,12,20,0.82)";
-    ctx.fillRect(x, y, bw, bh);
-    strokeRect(ctx, x, y, bw, bh, "#ffffff");
-
-    const info = opts.info;
-    ctx.textAlign = "center";
-    const nameParts = [info?.projectName, info?.screenName].filter(Boolean) as string[];
-    const maxTextW = bw - cell; // поля по половине клетки с каждой стороны
-    const fam = `-apple-system, "Segoe UI", system-ui, Roboto, Arial, sans-serif`;
-
-    // Подгоняем размер шрифта под ширину плашки, чтобы текст не вылезал.
-    const fit = (text: string, base: number, bold: boolean): number => {
-      let f = base;
-      while (f > 9) {
-        ctx.font = `${bold ? "bold " : ""}${f}px ${fam}`;
-        if (ctx.measureText(text).width <= maxTextW) break;
-        f -= 1;
-      }
-      return f;
-    };
-
-    let mainFont = clamp(Math.round(bh * 0.30), 18, 96);
-    const resText = `${w} × ${h}`;
-    mainFont = fit(resText, mainFont, true);
-    const subFont = clamp(Math.round(mainFont * 0.5), 12, 48);
-
-    if (nameParts.length > 0) {
-      const nf = fit(nameParts.join(" · "), subFont, false);
-      ctx.fillStyle = "#cbd5e1";
-      ctx.font = `${nf}px ${fam}`;
-      ctx.textBaseline = "middle";
-      ctx.fillText(nameParts.join(" · "), x + bw / 2, y + Math.round(bh * 0.28));
-    }
+  if (info?.pitch || info?.moduleName) {
+    const subFont = Math.max(14, Math.floor(labelFont * 0.45));
+    ctx.font = `${subFont}px -apple-system, "Segoe UI", system-ui, Roboto, Arial, sans-serif`;
+    ctx.fillStyle = "#cccccc";
+    const bottom = [info.pitch, info.moduleName].filter(Boolean).join(" · ");
+    ctx.fillText(bottom, cx, mainTextY + subFont + 8);
     ctx.fillStyle = "#ffffff";
-    ctx.font = `bold ${mainFont}px ${fam}`;
-    ctx.textBaseline = "middle";
-    ctx.fillText(resText, x + bw / 2, y + Math.round(bh * 0.52));
-
-    const bottom = [info?.pitch, info?.moduleName].filter(Boolean).join(" · ");
-    if (bottom) {
-      const bf = fit(bottom, subFont, false);
-      ctx.fillStyle = "#cbd5e1";
-      ctx.font = `${bf}px ${fam}`;
-      ctx.fillText(bottom, x + bw / 2, y + Math.round(bh * 0.76));
-    }
   }
 
-  // ─── 8. Угловые L-маркеры + координаты ──────────────────────────────────
-  const cornerLen = Math.min(cell * 2, Math.floor(Math.min(w, h) * 0.06));
+  // ─── 6. Frequency response: полосы 1/2/3/4/8 px ─────────────────────────
+  // Полоса в нижней четверти, ниже центра. Делит экран на 5 секций по ширине.
+  const freqBandH = Math.max(24, Math.floor(h * 0.06));
+  const freqBandY = h - Math.floor(h * 0.22) - freqBandH;
+  const freqLefts = [1, 2, 3, 4, 8];
+  const sectionW = w / freqLefts.length;
+  for (let s = 0; s < freqLefts.length; s++) {
+    const px2 = freqLefts[s];
+    const xStart = Math.round(s * sectionW);
+    const xEnd = Math.round((s + 1) * sectionW);
+    // Фон секции — чёрный, чтобы линии чётче читались.
+    ctx.fillStyle = "#000";
+    ctx.fillRect(xStart, freqBandY, xEnd - xStart, freqBandH);
+    // Чередующиеся вертикальные полосы по px2.
+    ctx.fillStyle = "#fff";
+    for (let x = xStart; x < xEnd; x += px2 * 2) {
+      ctx.fillRect(x, freqBandY, Math.min(px2, xEnd - x), freqBandH);
+    }
+    // Подпись плотности.
+    ctx.fillStyle = "#ffff00";
+    const lblFont = Math.max(11, Math.floor(freqBandH * 0.42));
+    ctx.font = `bold ${lblFont}px -apple-system, "Segoe UI", system-ui, Roboto, Arial, sans-serif`;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    ctx.fillText(`${px2}px`, xStart + 4, freqBandY + 2);
+  }
+
+  // ─── 7. Палитра дискретных цветов ───────────────────────────────────────
+  // Под frequency response — горизонтальная полоса насыщенных цветов и
+  // ступеней серого. Видно цветовую дискриминацию и calibration ошибки.
+  const paletteY = h - Math.floor(h * 0.12);
+  const paletteH = Math.max(20, Math.floor(h * 0.05));
+  const colors = [
+    "#ff0000", "#ff7f00", "#ffff00", "#7fff00", "#00ff00", "#00ff7f",
+    "#00ffff", "#007fff", "#0000ff", "#7f00ff", "#ff00ff", "#ff007f",
+    "#ffffff", "#cccccc", "#999999", "#666666", "#333333", "#000000"
+  ];
+  const swatchW = w / colors.length;
+  for (let i = 0; i < colors.length; i++) {
+    const x0 = Math.round(i * swatchW);
+    const x1 = Math.round((i + 1) * swatchW);
+    ctx.fillStyle = colors[i];
+    ctx.fillRect(x0, paletteY, x1 - x0, paletteH);
+  }
+  // Тонкая чёрная отбивка сверху и снизу полосы.
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, paletteY - 1, w, 1);
+  ctx.fillRect(0, paletteY + paletteH, w, 1);
+
+  // ─── 8. L-маркеры в углах ────────────────────────────────────────────────
+  const cornerLen = Math.min(80, Math.floor(Math.min(w, h) * 0.06));
   const corners: [number, number][] = [[0, 0], [w - 1, 0], [0, h - 1], [w - 1, h - 1]];
   ctx.fillStyle = "#ff4040";
   for (const [x, y] of corners) {
@@ -573,9 +525,11 @@ function drawInstaller(ctx: CanvasRenderingContext2D, w: number, h: number, opts
       ctx.fillRect(x, y + sy * i, 1, 1);
     }
   }
+
+  // ─── 9. Координаты углов (мелкий текст) ─────────────────────────────────
   ctx.fillStyle = "#ff4040";
-  const cf = Math.max(10, Math.floor(Math.min(w, h) / 120));
-  ctx.font = `${cf}px -apple-system, "Segoe UI", system-ui, Roboto, Arial, sans-serif`;
+  const cornerFont = Math.max(10, Math.floor(Math.min(w, h) / 120));
+  ctx.font = `${cornerFont}px -apple-system, "Segoe UI", system-ui, Roboto, Arial, sans-serif`;
   ctx.textAlign = "left";  ctx.textBaseline = "top";    ctx.fillText("0, 0", cornerLen + 4, 4);
   ctx.textAlign = "right"; ctx.textBaseline = "top";    ctx.fillText(`${w - 1}, 0`, w - cornerLen - 4, 4);
   ctx.textAlign = "left";  ctx.textBaseline = "bottom"; ctx.fillText(`0, ${h - 1}`, cornerLen + 4, h - 4);
